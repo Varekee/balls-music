@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
+<meta name="robots" content="noindex, nofollow, noarchive">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Balls Music</title>
@@ -369,6 +370,55 @@
     line-height:1.6;
   }
 
+  .gate{
+    position:fixed; inset:0;
+    background:var(--bg);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:100;
+    padding:20px;
+  }
+  .gate-card{
+    max-width:360px;
+    width:100%;
+    text-align:left;
+  }
+  .gate-title{
+    font-family:'Fraunces',serif;
+    font-size:30px;
+    font-weight:600;
+    margin-bottom:14px;
+  }
+  .gate-title span{ color:var(--amber); }
+  .gate-text{
+    color:var(--muted);
+    font-size:14px;
+    line-height:1.6;
+    margin:0 0 20px;
+  }
+  #gateForm{
+    display:flex;
+    gap:8px;
+  }
+  #gateInput{
+    flex:1;
+    background:var(--panel);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:7px;
+    padding:10px 12px;
+    font-size:14px;
+    font-family:'Inter',sans-serif;
+  }
+  #gateInput:focus{ outline:none; border-color:var(--amber-dim); }
+  .gate-error{
+    margin-top:12px;
+    font-size:12.5px;
+    color:var(--red);
+    min-height:16px;
+  }
+
   @media (max-width: 760px){
     .app{ grid-template-columns:1fr; grid-template-rows:auto 1fr; }
     .sidebar{ border-right:none; border-bottom:1px solid var(--border); max-height:40vh; }
@@ -382,7 +432,20 @@
 </head>
 <body>
 
-<div class="app">
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="eyebrow">приватный доступ</div>
+    <div class="gate-title">Balls<span> Music</span></div>
+    <p class="gate-text">Введите код доступа, который вам дали.</p>
+    <form id="gateForm" autocomplete="off">
+      <input type="password" id="gateInput" placeholder="Код доступа" autocomplete="off">
+      <button type="submit" class="btn primary" id="gateSubmit">Войти</button>
+    </form>
+    <div class="gate-error" id="gateError"></div>
+  </div>
+</div>
+
+<div class="app" id="app" style="display:none;">
   <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="brand">
@@ -480,10 +543,11 @@
 (function(){
   // Адрес вашего домашнего сервера музыки (Cloudflare Tunnel).
   // Замените на свой, например: 'https://random-words-1234.trycloudflare.com'
-  const MUSIC_SERVER = 'https://entrance-humans-stuffed-collapse.trycloudflare.com';
+  const MUSIC_SERVER = 'https://random-words-1234.trycloudflare.com';
 
-  const MANIFEST_URL = MUSIC_SERVER + '/manifest.json';
-  const MUSIC_BASE = MUSIC_SERVER + '/music/';
+  let accessKey = '';
+  function manifestUrl(){ return `${MUSIC_SERVER}/manifest.json?key=${encodeURIComponent(accessKey)}`; }
+  function trackUrl(relPath){ return `${MUSIC_SERVER}/music/${encodePath(relPath)}?key=${encodeURIComponent(accessKey)}`; }
 
   const tracklistEl = document.getElementById('tracklist');
   const libMeta = document.getElementById('libMeta');
@@ -552,7 +616,7 @@
     refreshBtn.classList.add('spinning');
     libMeta.textContent = 'Загрузка библиотеки…';
     libMeta.classList.remove('err');
-    fetch(MANIFEST_URL, { cache: 'no-store' })
+    fetch(manifestUrl(), { cache: 'no-store' })
       .then(r => {
         if(!r.ok) throw new Error('manifest not found');
         return r.json();
@@ -563,7 +627,7 @@
           const parts = parseNameParts(relPath);
           return {
             rel: relPath,
-            url: MUSIC_BASE + encodePath(relPath),
+            url: trackUrl(relPath),
             title: parts.title,
             artist: parts.artist,
             ext: parts.ext
@@ -806,7 +870,43 @@
     }
   });
 
-  loadLibrary();
+  // ---------- ACCESS GATE ----------
+  const gate = document.getElementById('gate');
+  const gateForm = document.getElementById('gateForm');
+  const gateInput = document.getElementById('gateInput');
+  const gateSubmit = document.getElementById('gateSubmit');
+  const gateError = document.getElementById('gateError');
+  const appEl = document.getElementById('app');
+
+  gateForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const candidate = gateInput.value.trim();
+    if(!candidate) return;
+    gateSubmit.disabled = true;
+    gateSubmit.textContent = 'Проверяю…';
+    gateError.textContent = '';
+    accessKey = candidate;
+
+    fetch(manifestUrl(), { cache: 'no-store' })
+      .then(r => {
+        if(r.status === 401) throw new Error('unauthorized');
+        if(!r.ok) throw new Error('unreachable');
+        return r.json();
+      })
+      .then(() => {
+        gate.style.display = 'none';
+        appEl.style.display = 'grid';
+        loadLibrary();
+      })
+      .catch(err => {
+        accessKey = '';
+        gateSubmit.disabled = false;
+        gateSubmit.textContent = 'Войти';
+        gateError.textContent = err.message === 'unauthorized'
+          ? 'Неверный код доступа.'
+          : 'Не удалось связаться с домашним сервером. Проверьте, что он запущен.';
+      });
+  });
 })();
 </script>
 </body>
