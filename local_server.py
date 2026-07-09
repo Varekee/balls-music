@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-Balls Music — локальный сервер музыки.
+Balls Music — локальный сервер музыки (с тегами и обложками).
 
 Запускается на вашем ПК, где хранится музыка. Раздаёт:
-  - GET /manifest.json  -> актуальный список треков (JSON), собирается на лету
-  - GET /music/<путь>   -> сам аудиофайл (с поддержкой перемотки / Range-запросов)
+  - GET /manifest.json   -> список треков с тегами (исполнитель/альбом/длительность), JSON
+  - GET /music/<путь>    -> сам аудиофайл (с поддержкой перемотки / Range-запросов)
+  - GET /art/<путь>      -> обложка, встроенная в файл (если есть)
 
-Сайт на хостинге обращается сюда через Cloudflare Tunnel — сам сервер слушает
-только localhost:8080, наружу в интернет его "публикует" cloudflared.
+Все запросы (кроме OPTIONS) требуют параметр ?key=ВАШ_КОД — см. ACCESS_KEY ниже.
+
+Требуется библиотека mutagen для чтения тегов и обложек:
+    pip install mutagen --break-system-packages
+    (на Windows/Mac обычно без флага:  pip install mutagen)
 
 Использование:
 1. Положите этот файл рядом с папкой "music" (там ваша музыка, можно с подпапками).
@@ -23,17 +27,143 @@ import json
 import mimetypes
 from urllib.parse import unquote, urlparse, parse_qs
 
+try:
+    import mutagen
+    from mutagen.id3 import ID3
+    from mutagen.flac import FLAC
+    from mutagen.mp4 import MP4
+    HAVE_MUTAGEN = True
+except ImportError:
+    HAVE_MUTAGEN = False
+
 MUSIC_DIR = "music"
 PORT = 8080
 EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus", ".weba", ".webm"}
 
-# Секретный код доступа. Замените на свой — этот же код нужно будет вписать
-# в index.html и сообщить только тем, кому вы разрешаете слушать музыку.
-ACCESS_KEY = "751064"
+# Секретный код доступа. Замените на свой — этот же код нужно будет ввести на сайте.
+ACCESS_KEY = "7510"
 
 # Можно сузить до адреса вашего сайта вместо "*" для дополнительной строгости,
 # например: "https://ваш-логин.github.io"
 ALLOWED_ORIGIN = "*"
+
+# Кэш тегов: {rel_path: (mtime, size, meta_dict)} — чтобы не перечитывать теги
+# у всех файлов при каждом обновлении библиотеки.
+_tag_cache = {}
+
+
+def parse_name_fallback(rel_path):
+    """Если тегов нет — пробуем угадать исполнителя/название по имени файла."""
+    filename = rel_path.split("/")[-1]
+    base = os.path.splitext(filename)[0]
+    m = re.match(r"^(.{1,60}?)\s[-–—]\s(.+)$", base)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return None, base
+
+
+def read_meta(full_path, rel_path, ext):
+    """Возвращает dict: title, artist, album, duration, trackNumber, hasArt."""
+    fallback_artist, fallback_title = parse_name_fallback(rel_path)
+    meta = {
+        "title": fallback_title,
+        "artist": fallback_artist,
+        "album": None,
+        "duration": None,
+        "trackNumber": None,
+        "hasArt": False,
+    }
+    if not HAVE_MUTAGEN:
+        return meta
+    try:
+        f = mutagen.File(full_path, easy=True)
+        if f is not None:
+            if f.tags:
+                def first(key):
+                    v = f.tags.get(key)
+                    return str(v[0]).strip() if v else None
+                meta["title"] = first("title") or meta["title"]
+                meta["artist"] = first("artist") or meta["artist"]
+                meta["album"] = first("album")
+                tn = first("tracknumber")
+                if tn:
+                    try:
+                        meta["trackNumber"] = int(re.split(r"[/\\]", tn)[0])
+                    except ValueError:
+                        pass
+            if hasattr(f.info, "length"):
+                meta["duration"] = round(f.info.length, 1)
+    except Exception:
+        pass
+
+    try:
+        if ext == "mp3":
+            tags = ID3(full_path)
+            meta["hasArt"] = any(t.FrameID == "APIC" for t in tags.values())
+        elif ext == "flac":
+            meta["hasArt"] = bool(FLAC(full_path).pictures)
+        elif ext in ("m4a", "mp4"):
+            mp4 = MP4(full_path)
+            meta["hasArt"] = bool(mp4.tags and mp4.tags.get("covr"))
+    except Exception:
+        pass
+
+    return meta
+
+
+def get_cover_bytes(full_path, ext):
+    try:
+        if ext == "mp3":
+            tags = ID3(full_path)
+            for tag in tags.values():
+                if tag.FrameID == "APIC":
+                    return tag.data, tag.mime
+        elif ext == "flac":
+            f = FLAC(full_path)
+            if f.pictures:
+                p = f.pictures[0]
+                return p.data, p.mime
+        elif ext in ("m4a", "mp4"):
+            f = MP4(full_path)
+            covers = f.tags.get("covr") if f.tags else None
+            if covers:
+                c = covers[0]
+                mime = "image/png" if c.imageformat == 14 else "image/jpeg"
+                return bytes(c), mime
+    except Exception:
+        pass
+    return None, None
+
+
+def scan_tracks():
+    tracks = []
+    for root, _dirs, files in os.walk(MUSIC_DIR):
+        for fn in files:
+            ext = os.path.splitext(fn)[1].lower().lstrip(".")
+            if "." + ext not in EXTS:
+                continue
+            full = os.path.join(root, fn)
+            rel = os.path.relpath(full, MUSIC_DIR).replace(os.sep, "/")
+            try:
+                stat = os.stat(full)
+            except OSError:
+                continue
+            cached = _tag_cache.get(rel)
+            if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+                meta = cached[2]
+            else:
+                meta = read_meta(full, rel, ext)
+                _tag_cache[rel] = (stat.st_mtime, stat.st_size, meta)
+            track = {"rel": rel, "ext": ext}
+            track.update(meta)
+            tracks.append(track)
+    tracks.sort(key=lambda t: (
+        (t["artist"] or "").lower(),
+        (t["album"] or "").lower(),
+        t["trackNumber"] if t["trackNumber"] is not None else 9999,
+        (t["title"] or "").lower(),
+    ))
+    return tracks
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -76,21 +206,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.serve_manifest(send_body)
         elif path.startswith("/music/"):
             self.serve_file(path[len("/music/"):], send_body)
+        elif path.startswith("/art/"):
+            self.serve_art(path[len("/art/"):], send_body)
         else:
             self.send_error(404, "Not found")
 
     def serve_manifest(self, send_body=True):
         if not self._check_key():
             return
-        tracks = []
-        if os.path.isdir(MUSIC_DIR):
-            for root, _dirs, files in os.walk(MUSIC_DIR):
-                for f in files:
-                    ext = os.path.splitext(f)[1].lower()
-                    if ext in EXTS:
-                        rel = os.path.relpath(os.path.join(root, f), MUSIC_DIR).replace(os.sep, "/")
-                        tracks.append(rel)
-        tracks.sort(key=str.lower)
+        tracks = scan_tracks() if os.path.isdir(MUSIC_DIR) else []
         body = json.dumps(tracks, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -100,13 +224,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if send_body:
             self.wfile.write(body)
 
-    def serve_file(self, rel, send_body=True):
-        if not self._check_key():
-            return
+    def _resolve(self, rel):
         rel = unquote(rel)
         full = os.path.normpath(os.path.join(MUSIC_DIR, rel))
         base = os.path.normpath(MUSIC_DIR)
         if not full.startswith(base) or not os.path.isfile(full):
+            return None
+        return full
+
+    def serve_art(self, rel, send_body=True):
+        if not self._check_key():
+            return
+        full = self._resolve(rel)
+        if not full or not HAVE_MUTAGEN:
+            self.send_error(404, "No cover")
+            return
+        ext = os.path.splitext(full)[1].lower().lstrip(".")
+        data, mime = get_cover_bytes(full, ext)
+        if not data:
+            self.send_error(404, "No cover")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", mime or "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self._cors()
+        self.end_headers()
+        if send_body:
+            self.wfile.write(data)
+
+    def serve_file(self, rel, send_body=True):
+        if not self._check_key():
+            return
+        full = self._resolve(rel)
+        if not full:
             self.send_error(404, "File not found")
             return
 
@@ -165,9 +316,13 @@ if __name__ == "__main__":
         print("Создайте папку 'music' и положите в неё аудиофайлы, затем запустите скрипт снова.")
         raise SystemExit(1)
 
+    if not HAVE_MUTAGEN:
+        print("ВНИМАНИЕ: библиотека mutagen не установлена — теги и обложки читаться не будут,")
+        print("сайт покажет только имена файлов. Установите:  pip install mutagen --break-system-packages")
+        print()
+
     with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), Handler) as httpd:
         print(f"Сервер музыки запущен: http://127.0.0.1:{PORT}")
-        print("Список треков:  http://127.0.0.1:%d/manifest.json" % PORT)
+        print("Список треков:  http://127.0.0.1:%d/manifest.json?key=..." % PORT)
         print("Не закрывайте это окно, пока хотите слушать музыку через сайт.")
-        print("Дальше запустите cloudflared, чтобы опубликовать этот адрес в интернет.")
         httpd.serve_forever()
