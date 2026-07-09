@@ -21,14 +21,18 @@ import os
 import re
 import json
 import mimetypes
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse, parse_qs
 
 MUSIC_DIR = "music"
 PORT = 8080
 EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus", ".weba", ".webm"}
 
+# Секретный код доступа. Замените на свой — этот же код нужно будет вписать
+# в index.html и сообщить только тем, кому вы разрешаете слушать музыку.
+ACCESS_KEY = "751064"
+
 # Можно сузить до адреса вашего сайта вместо "*" для дополнительной строгости,
-# например: "https://ваш-сайт.infinityfreeapp.com"
+# например: "https://ваш-логин.github.io"
 ALLOWED_ORIGIN = "*"
 
 
@@ -40,6 +44,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Range")
         self.send_header("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges")
+
+    def _check_key(self):
+        query = parse_qs(urlparse(self.path).query)
+        key = query.get("key", [None])[0]
+        if key != ACCESS_KEY:
+            body = "Unauthorized".encode("utf-8")
+            self.send_response(401)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
+            return False
+        return True
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -62,6 +80,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Not found")
 
     def serve_manifest(self, send_body=True):
+        if not self._check_key():
+            return
         tracks = []
         if os.path.isdir(MUSIC_DIR):
             for root, _dirs, files in os.walk(MUSIC_DIR):
@@ -81,6 +101,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def serve_file(self, rel, send_body=True):
+        if not self._check_key():
+            return
         rel = unquote(rel)
         full = os.path.normpath(os.path.join(MUSIC_DIR, rel))
         base = os.path.normpath(MUSIC_DIR)
