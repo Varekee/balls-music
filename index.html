@@ -142,14 +142,25 @@
   .artist-count{
     font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); margin-top:2px;
   }
+  .artist-cover.square{ border-radius:12px; }
+  .artist-cover.create-tile{
+    border:2px dashed var(--border); background:transparent !important;
+    color:var(--muted); box-shadow:none;
+  }
+  .artist-card:hover .create-tile{ border-color:var(--amber-dim); color:var(--text); }
+  .create-tile svg{ width:28px; height:28px; }
+
+  .view-title-row{ display:flex; align-items:center; gap:6px; }
+  .view-title-row .view-title{ margin-right:4px; }
+  .section-gap{ margin-top:38px; }
 
   /* ---------- TRACK TABLE ---------- */
   .track-table{ width:100%; border-collapse:collapse; }
   .track-row{
     display:grid;
-    grid-template-columns: 32px 1fr 70px;
+    grid-template-columns: 32px 1fr 32px 32px 70px;
     align-items:center;
-    gap:14px;
+    gap:8px;
     padding:8px 10px;
     border-radius:8px;
     cursor:pointer;
@@ -209,7 +220,47 @@
     display:flex; align-items:center; justify-content:center;
     font-family:'Fraunces',serif; font-size:18px; font-weight:600; color:#fff;
   }
-  .pb-meta{ min-width:0; }
+  .pb-meta{ min-width:0; flex:1; }
+
+  .heart-btn{
+    background:none; border:none; cursor:pointer; color:var(--muted);
+    width:28px; height:28px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%;
+    transition:background .15s ease, color .15s ease;
+  }
+  .heart-btn:hover{ background:var(--panel-3); color:var(--text); }
+  .heart-btn.active{ color:var(--amber); }
+  .heart-btn svg{ width:15px; height:15px; }
+  .pb-heart{ width:34px; height:34px; flex-shrink:0; }
+  .pb-heart svg{ width:17px; height:17px; }
+
+  /* ---------- ADD-TO-PLAYLIST POPOVER ---------- */
+  .playlist-popover{
+    position:fixed; z-index:150; width:230px; max-height:280px;
+    background:var(--panel-3); border:1px solid var(--border); border-radius:10px;
+    box-shadow:0 12px 32px rgba(0,0,0,.45);
+    padding:8px; display:none;
+  }
+  .pp-title{
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted); padding:4px 8px 6px;
+  }
+  .pp-list{ max-height:170px; overflow-y:auto; }
+  .pp-item{
+    display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:6px; cursor:pointer; font-size:12.5px;
+  }
+  .pp-item:hover{ background:var(--panel-2); }
+  .pp-item input[type="checkbox"]{ accent-color:var(--amber); width:14px; height:14px; flex-shrink:0; }
+  .pp-item span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pp-empty{ color:var(--muted); font-size:12px; padding:8px; }
+  .pp-create{ display:flex; gap:6px; margin-top:6px; padding-top:8px; border-top:1px solid var(--border); }
+  .pp-create input{
+    flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:6px; padding:7px 9px; font-size:12px;
+  }
+  .pp-create input:focus{ outline:none; border-color:var(--amber-dim); }
+  .pp-create button{ padding:7px 11px; font-size:12px; }
   .pb-title{
     font-size:13.5px; font-weight:600;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -228,6 +279,20 @@
     width:34px; height:34px; background:var(--amber); color:#181510;
   }
   .play-btn:hover{ background:#eeb45f; }
+  .play-wrap{ position:relative; width:34px; height:34px; }
+  .buffer-spinner{
+    position:absolute; inset:0; display:none;
+    align-items:center; justify-content:center;
+  }
+  .buffer-spinner::after{
+    content:''; width:18px; height:18px; border-radius:50%;
+    border:2px solid rgba(230,165,66,.25); border-top-color:var(--amber);
+    animation:spin .7s linear infinite;
+  }
+  .pb-buffering{
+    display:none;
+    font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--amber);
+  }
   .pb-progress-row{
     display:flex; align-items:center; gap:8px;
     font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);
@@ -237,6 +302,9 @@
   }
   .progress-fill{
     position:absolute; left:0; top:0; bottom:0; background:var(--amber); border-radius:3px; width:0%;
+  }
+  .progress-buffered{
+    position:absolute; left:0; top:0; bottom:0; background:rgba(255,255,255,.18); border-radius:3px; width:0%;
   }
   .progress-bar .handle{
     position:absolute; top:50%; width:10px; height:10px; background:var(--amber); border-radius:50%;
@@ -257,7 +325,7 @@
     .view{ padding:20px 16px 150px; }
     .player-bar{ grid-template-columns:1fr; height:auto; padding:10px 14px; gap:8px; }
     .pb-volume{ display:none; }
-    .track-row{ grid-template-columns:24px 1fr 50px; }
+    .track-row{ grid-template-columns:24px 1fr 26px 26px 50px; }
   }
 
   @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
@@ -289,6 +357,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       <input type="text" id="searchInput" placeholder="Поиск по трекам, исполнителям, альбомам…">
     </div>
+    <button class="icon-btn" id="favoritesBtn" title="Избранное">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.7-4.3-9.3-8.2C1 10.1 1.6 6.7 4.6 5.1c2.4-1.3 5-.4 6.4 1.6 1.4-2 4-2.9 6.4-1.6 3 1.6 3.6 5 1.9 7.7C18.7 16.7 12 21 12 21z"/></svg>
+    </button>
     <button class="icon-btn" id="refreshBtn" title="Обновить библиотеку">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
     </button>
@@ -302,7 +373,11 @@
       <div class="pb-meta">
         <div class="pb-title" id="pbTitle">Ничего не играет</div>
         <div class="pb-artist" id="pbArtist">Выберите трек слева</div>
+        <div class="pb-buffering" id="pbBuffering">буферизация…</div>
       </div>
+      <button class="icon-btn heart-btn pb-heart" id="pbHeartBtn" title="В избранное">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.7-4.3-9.3-8.2C1 10.1 1.6 6.7 4.6 5.1c2.4-1.3 5-.4 6.4 1.6 1.4-2 4-2.9 6.4-1.6 3 1.6 3.6 5 1.9 7.7C18.7 16.7 12 21 12 21z"/></svg>
+      </button>
     </div>
 
     <div class="pb-center">
@@ -313,9 +388,12 @@
         <button class="icon-btn" id="prevBtn" title="Предыдущий (P)">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12 19 6v12z"/></svg>
         </button>
-        <button class="icon-btn play-btn" id="playBtn" title="Пауза / Play (Space)">
-          <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        </button>
+        <div class="play-wrap">
+          <button class="icon-btn play-btn" id="playBtn" title="Пауза / Play (Space)">
+            <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <div class="buffer-spinner" id="bufferSpinner"></div>
+        </div>
         <button class="icon-btn" id="nextBtn" title="Следующий (N)">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4.5 6 14 12l-9.5 6z"/></svg>
         </button>
@@ -326,6 +404,7 @@
       <div class="pb-progress-row">
         <span id="curTime">0:00</span>
         <div class="progress-bar" id="progressBar">
+          <div class="progress-buffered" id="progressBuffered"></div>
           <div class="progress-fill" id="progressFill"></div>
           <div class="handle" id="progressHandle"></div>
         </div>
@@ -340,17 +419,27 @@
   </div>
 </div>
 
+<div class="playlist-popover" id="playlistPopover">
+  <div class="pp-title">Добавить в плейлист</div>
+  <div class="pp-list" id="ppList"></div>
+  <form class="pp-create" id="ppCreateForm" autocomplete="off">
+    <input type="text" id="ppCreateInput" placeholder="Новый плейлист…" autocomplete="off">
+    <button type="submit" class="btn primary">+</button>
+  </form>
+</div>
+
 <audio id="audioEl" preload="metadata"></audio>
 
 <script>
 (function(){
-  const MUSIC_SERVER = 'https://armor-extend-andrew-increase.trycloudflare.com';
+  const MUSIC_SERVER = 'https://ВАШ-АДРЕС.trycloudflare.com';
 
   let accessKey = '';
   function manifestUrl(){ return `${MUSIC_SERVER}/manifest.json?key=${encodeURIComponent(accessKey)}`; }
   function encodePath(rel){ return rel.split('/').map(encodeURIComponent).join('/'); }
   function trackUrl(rel){ return `${MUSIC_SERVER}/music/${encodePath(rel)}?key=${encodeURIComponent(accessKey)}`; }
   function artUrl(rel){ return `${MUSIC_SERVER}/art/${encodePath(rel)}?key=${encodeURIComponent(accessKey)}`; }
+  function playlistsUrl(){ return `${MUSIC_SERVER}/playlists?key=${encodeURIComponent(accessKey)}`; }
 
   // ---------- DOM ----------
   const gate = document.getElementById('gate');
@@ -362,11 +451,13 @@
   const backBtn = document.getElementById('backBtn');
   const searchInput = document.getElementById('searchInput');
   const refreshBtn = document.getElementById('refreshBtn');
+  const favoritesBtn = document.getElementById('favoritesBtn');
   const viewEl = document.getElementById('view');
 
   const pbCover = document.getElementById('pbCover');
   const pbTitle = document.getElementById('pbTitle');
   const pbArtist = document.getElementById('pbArtist');
+  const pbHeartBtn = document.getElementById('pbHeartBtn');
   const audioEl = document.getElementById('audioEl');
   const playBtn = document.getElementById('playBtn');
   const playIcon = document.getElementById('playIcon');
@@ -377,12 +468,16 @@
   const progressBar = document.getElementById('progressBar');
   const progressFill = document.getElementById('progressFill');
   const progressHandle = document.getElementById('progressHandle');
+  const progressBuffered = document.getElementById('progressBuffered');
+  const bufferSpinner = document.getElementById('bufferSpinner');
+  const pbBuffering = document.getElementById('pbBuffering');
   const curTimeEl = document.getElementById('curTime');
   const durTimeEl = document.getElementById('durTime');
   const volSlider = document.getElementById('volSlider');
 
   // ---------- STATE ----------
   let allTracks = [];      // flat list from manifest
+  let playlists = {};      // {id: {name, tracks: [rel,...]}}
   let currentList = [];    // active queue (artist tracks / search results)
   let currentIndex = -1;
   let currentTrackRef = null;
@@ -390,7 +485,9 @@
   let shuffle = false;
   let repeatMode = 0; // 0 off, 1 all, 2 one
   let shuffleOrder = [];
-  let view = 'artists'; // 'artists' | 'artist' | 'search'
+  let view = 'artists'; // 'artists' | 'artist' | 'search' | 'favorites' | 'playlist'
+  let currentPlaylistId = null;
+  let currentQuery = '';
   let currentArtistName = null;
 
   const PLAY_SVG = '<path d="M8 5v14l11-7z"/>';
@@ -413,6 +510,11 @@
     return `background: linear-gradient(160deg, hsl(${hue},45%,30%), hsl(${(hue+40)%360},45%,16%));`;
   }
   function initial(name){ return (name || '?').trim().charAt(0).toUpperCase() || '?'; }
+  function heartIcon(active){
+    return active
+      ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-6.7-4.3-9.3-8.2C1 10.1 1.6 6.7 4.6 5.1c2.4-1.3 5-.4 6.4 1.6 1.4-2 4-2.9 6.4-1.6 3 1.6 3.6 5 1.9 7.7C18.7 16.7 12 21 12 21z"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6.7-4.3-9.3-8.2C1 10.1 1.6 6.7 4.6 5.1c2.4-1.3 5-.4 6.4 1.6 1.4-2 4-2.9 6.4-1.6 3 1.6 3.6 5 1.9 7.7C18.7 16.7 12 21 12 21z"/></svg>';
+  }
 
   function artistOf(t){ return t.artist && t.artist.trim() ? t.artist.trim() : 'Неизвестный исполнитель'; }
 
@@ -442,7 +544,7 @@
       .then(list => {
         gate.style.display = 'none';
         appEl.style.display = 'flex';
-        setLibrary(list);
+        return fetchPlaylists().then(() => setLibrary(list));
       })
       .catch(err => {
         accessKey = '';
@@ -454,6 +556,13 @@
       });
   });
 
+  function fetchPlaylists(){
+    return fetch(playlistsUrl(), { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : {})
+      .then(pl => { playlists = pl || {}; })
+      .catch(() => {});
+  }
+
   // ---------- LIBRARY ----------
   function setLibrary(list){
     allTracks = Array.isArray(list) ? list : [];
@@ -464,22 +573,35 @@
 
   refreshBtn.addEventListener('click', () => {
     refreshBtn.classList.add('spinning');
-    fetch(manifestUrl(), { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(list => { allTracks = list; render(); })
+    Promise.all([
+      fetch(manifestUrl(), { cache: 'no-store' }).then(r => r.ok ? r.json() : Promise.reject()),
+      fetchPlaylists()
+    ])
+      .then(([list]) => { allTracks = list; render(); })
       .catch(() => {})
       .finally(() => setTimeout(() => refreshBtn.classList.remove('spinning'), 400));
   });
 
   searchInput.addEventListener('input', () => {
     const q = searchInput.value.trim();
+    currentQuery = q;
     if(q){ view = 'search'; render(q); }
+    else if(currentPlaylistId){ view = 'playlist'; render(); }
     else { view = currentArtistName ? 'artist' : 'artists'; render(); }
+  });
+
+  favoritesBtn.addEventListener('click', () => {
+    view = 'favorites';
+    currentArtistName = null;
+    currentPlaylistId = null;
+    searchInput.value = '';
+    render();
   });
 
   backBtn.addEventListener('click', () => {
     view = 'artists';
     currentArtistName = null;
+    currentPlaylistId = null;
     searchInput.value = '';
     render();
   });
@@ -488,7 +610,9 @@
   function render(query){
     if(view === 'artists') return renderArtists();
     if(view === 'artist') return renderArtistDetail(currentArtistName);
-    if(view === 'search') return renderSearch(query || '');
+    if(view === 'search') return renderSearch(query != null ? query : currentQuery);
+    if(view === 'favorites') return renderFavorites();
+    if(view === 'playlist') return renderPlaylistDetail(currentPlaylistId);
   }
 
   function renderArtists(){
@@ -509,10 +633,45 @@
     });
     const artists = Array.from(byArtist.entries()).sort((a,b) => a[0].localeCompare(b[0], 'ru'));
 
+    const favCount = allTracks.filter(t => t.favorite).length;
+    const favTile = `
+      <div class="artist-card" data-favorites="1">
+        <div class="artist-cover" style="background:linear-gradient(160deg, var(--amber), var(--amber-dim));">${heartIcon(true)}</div>
+        <div class="artist-name">Избранное</div>
+        <div class="artist-count">${favCount} ${pluralize(favCount,'трек','трека','треков')}</div>
+      </div>
+    `;
+
+    const byRel = new Map(allTracks.map(t => [t.rel, t]));
+    const playlistTiles = Object.entries(playlists).map(([id, pl]) => {
+      const firstArt = pl.tracks.map(rel => byRel.get(rel)).find(t => t && t.hasArt);
+      const coverInner = firstArt
+        ? `<img src="${artUrl(firstArt.rel)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`
+        : initial(pl.name);
+      const style = firstArt ? '' : placeholderStyle(pl.name);
+      return `
+        <div class="artist-card" data-playlist="${escapeHtml(id)}">
+          <div class="artist-cover square" style="${style}">${coverInner}</div>
+          <div class="artist-name">${escapeHtml(pl.name)}</div>
+          <div class="artist-count">${pl.tracks.length} ${pluralize(pl.tracks.length,'трек','трека','треков')}</div>
+        </div>
+      `;
+    }).join('');
+
+    const createTile = `
+      <div class="artist-card" data-create-playlist="1">
+        <div class="artist-cover square create-tile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </div>
+        <div class="artist-name">Новый плейлист</div>
+        <div class="artist-count">&nbsp;</div>
+      </div>
+    `;
+
     const cards = artists.map(([name, tracks]) => {
       const withArt = tracks.find(t => t.hasArt);
       const coverInner = withArt
-        ? `<img src="${artUrl(withArt.rel)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.innerHTML='${initial(name)}'; this.parentElement.removeAttribute('style'); this.parentElement.style.cssText='${placeholderStyle(name)}';">`
+        ? `<img src="${artUrl(withArt.rel)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.innerHTML='${initial(name)}'; this.parentElement.removeAttribute('style'); this.parentElement.style.cssText='${placeholderStyle(name)}';">`
         : initial(name);
       const style = withArt ? '' : placeholderStyle(name);
       return `
@@ -527,13 +686,37 @@
     viewEl.innerHTML = `
       <div class="view-header">
         <div class="view-eyebrow">библиотека</div>
+        <div class="view-title">Плейлисты</div>
+      </div>
+      <div class="artist-grid">${favTile}${playlistTiles}${createTile}</div>
+
+      <div class="view-header section-gap">
+        <div class="view-eyebrow">библиотека</div>
         <div class="view-title">Исполнители</div>
       </div>
       <div class="artist-grid">${cards}</div>
     `;
-    viewEl.querySelectorAll('.artist-card').forEach(card => {
+    const favTileEl = viewEl.querySelector('[data-favorites]');
+    if(favTileEl) favTileEl.addEventListener('click', () => {
+      view = 'favorites';
+      searchInput.value = '';
+      render();
+    });
+    const createTileEl = viewEl.querySelector('[data-create-playlist]');
+    if(createTileEl) createTileEl.addEventListener('click', createPlaylistPrompt);
+    viewEl.querySelectorAll('.artist-card[data-playlist]').forEach(card => {
+      card.addEventListener('click', () => {
+        currentPlaylistId = card.dataset.playlist;
+        currentArtistName = null;
+        view = 'playlist';
+        searchInput.value = '';
+        render();
+      });
+    });
+    viewEl.querySelectorAll('.artist-card[data-artist]').forEach(card => {
       card.addEventListener('click', () => {
         currentArtistName = card.dataset.artist;
+        currentPlaylistId = null;
         view = 'artist';
         searchInput.value = '';
         render();
@@ -578,6 +761,112 @@
     renderTrackRows(results, 'search');
   }
 
+  function renderFavorites(){
+    backBtn.style.display = 'flex';
+    const results = allTracks.filter(t => t.favorite);
+    currentList = results;
+    viewEl.innerHTML = `
+      <div class="view-header">
+        <div class="view-eyebrow">плейлист</div>
+        <div class="view-title">Избранное</div>
+      </div>
+      <div class="track-table" id="trackTableBody"></div>
+    `;
+    if(results.length === 0){
+      document.getElementById('trackTableBody').innerHTML = `<div class="empty-state">
+        Пока пусто. Нажимайте на сердечко рядом с треком, чтобы добавить его сюда.
+      </div>`;
+      return;
+    }
+    renderTrackRows(results, 'search');
+  }
+
+  function renderPlaylistDetail(id){
+    backBtn.style.display = 'flex';
+    const pl = playlists[id];
+    if(!pl){
+      view = 'artists';
+      return renderArtists();
+    }
+    const byRel = new Map(allTracks.map(t => [t.rel, t]));
+    const tracks = pl.tracks.map(rel => byRel.get(rel)).filter(Boolean);
+    currentList = tracks;
+    viewEl.innerHTML = `
+      <div class="view-header">
+        <div class="view-eyebrow">плейлист</div>
+        <div class="view-title-row">
+          <div class="view-title">${escapeHtml(pl.name)}</div>
+          <button class="icon-btn" id="renamePlaylistBtn" title="Переименовать">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </button>
+          <button class="icon-btn" id="deletePlaylistBtn" title="Удалить плейлист">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="track-table" id="trackTableBody"></div>
+    `;
+    document.getElementById('renamePlaylistBtn').addEventListener('click', () => renamePlaylist(id));
+    document.getElementById('deletePlaylistBtn').addEventListener('click', () => deletePlaylistConfirm(id));
+    if(tracks.length === 0){
+      document.getElementById('trackTableBody').innerHTML = `<div class="empty-state">
+        Пусто. Добавляйте треки кнопкой «+» рядом с треком в любом другом разделе сайта.
+      </div>`;
+      return;
+    }
+    renderTrackRows(tracks, 'search');
+  }
+
+  async function createPlaylistPrompt(){
+    const name = prompt('Название нового плейлиста:');
+    if(name === null) return;
+    const trimmed = name.trim();
+    if(!trimmed) return;
+    try{
+      const res = await fetch(playlistsUrl(), {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action: 'create', name: trimmed })
+      });
+      const data = await res.json();
+      if(data && data.playlists) playlists = data.playlists;
+    } catch(e){}
+    render();
+  }
+
+  async function renamePlaylist(id){
+    const pl = playlists[id];
+    if(!pl) return;
+    const name = prompt('Новое название плейлиста:', pl.name);
+    if(name === null) return;
+    const trimmed = name.trim();
+    if(!trimmed) return;
+    try{
+      const res = await fetch(playlistsUrl(), {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action: 'rename', id, name: trimmed })
+      });
+      const data = await res.json();
+      if(data && data.playlists) playlists = data.playlists;
+    } catch(e){}
+    render();
+  }
+
+  async function deletePlaylistConfirm(id){
+    const pl = playlists[id];
+    if(!pl) return;
+    if(!confirm(`Удалить плейлист «${pl.name}»? Сами треки никуда не денутся.`)) return;
+    try{
+      const res = await fetch(playlistsUrl(), {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action: 'delete', id })
+      });
+      const data = await res.json();
+      if(data && data.playlists) playlists = data.playlists;
+    } catch(e){}
+    view = 'artists';
+    render();
+  }
+
   function renderTrackRows(tracks, context){
     const body = document.getElementById('trackTableBody');
     body.innerHTML = '';
@@ -597,7 +886,7 @@
         : [t.artist, t.album].filter(Boolean).join(' · ') || '—';
       const thumbStyle = t.hasArt ? '' : placeholderStyle(t.artist || t.title || '?');
       const thumbInner = t.hasArt
-        ? `<img src="${artUrl(t.rel)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:5px;" onerror="this.parentElement.textContent='${initial(t.title)}';this.parentElement.style.cssText='${thumbStyle}';">`
+        ? `<img src="${artUrl(t.rel)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:5px;" onerror="this.parentElement.textContent='${initial(t.title)}';this.parentElement.style.cssText='${thumbStyle}';">`
         : initial(t.title);
       row.innerHTML = `
         <span class="t-idx">${idxContent}</span>
@@ -608,13 +897,147 @@
             <div class="t-sub">${escapeHtml(sub)}</div>
           </span>
         </span>
+        <button class="heart-btn add-btn" title="Добавить в плейлист" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button class="heart-btn ${t.favorite ? 'active' : ''}" title="В избранное" type="button">${heartIcon(!!t.favorite)}</button>
         <span class="t-dur">${fmtTime(t.duration)}</span>
       `;
       row.addEventListener('click', () => playFromList(tracks, i));
+      const addBtn = row.querySelector('.add-btn');
+      addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPlaylistPopover(t, addBtn);
+      });
+      const heartBtn = row.querySelectorAll('.heart-btn')[1];
+      heartBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(t, heartBtn);
+      });
       frag.appendChild(row);
     });
     body.appendChild(frag);
   }
+
+  // ---------- ADD-TO-PLAYLIST POPOVER ----------
+  const playlistPopover = document.getElementById('playlistPopover');
+  const ppList = document.getElementById('ppList');
+  const ppCreateForm = document.getElementById('ppCreateForm');
+  const ppCreateInput = document.getElementById('ppCreateInput');
+  let ppTrack = null;
+
+  function openPlaylistPopover(track, anchorEl){
+    ppTrack = track;
+    renderPopoverList();
+    playlistPopover.style.display = 'block';
+    const rect = anchorEl.getBoundingClientRect();
+    const popWidth = 230, popHeight = 280;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    if(left + popWidth > window.innerWidth - 10) left = window.innerWidth - popWidth - 10;
+    if(top + popHeight > window.innerHeight - 10) top = Math.max(10, rect.top - popHeight - 6);
+    playlistPopover.style.left = left + 'px';
+    playlistPopover.style.top = top + 'px';
+  }
+
+  function closePlaylistPopover(){
+    playlistPopover.style.display = 'none';
+    ppTrack = null;
+    ppCreateInput.value = '';
+  }
+
+  document.addEventListener('click', (e) => {
+    if(playlistPopover.style.display === 'block' &&
+       !playlistPopover.contains(e.target) &&
+       !e.target.closest('.add-btn')){
+      closePlaylistPopover();
+    }
+  });
+
+  function renderPopoverList(){
+    const entries = Object.entries(playlists);
+    if(entries.length === 0){
+      ppList.innerHTML = `<div class="pp-empty">Плейлистов пока нет — создайте ниже.</div>`;
+      return;
+    }
+    ppList.innerHTML = entries.map(([id, pl]) => {
+      const checked = ppTrack && pl.tracks.includes(ppTrack.rel);
+      return `<label class="pp-item"><input type="checkbox" data-id="${escapeHtml(id)}" ${checked ? 'checked' : ''}><span>${escapeHtml(pl.name)}</span></label>`;
+    }).join('');
+    ppList.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => togglePlaylistMembership(cb.dataset.id, cb.checked));
+    });
+  }
+
+  async function togglePlaylistMembership(id, add){
+    if(!ppTrack) return;
+    try{
+      const res = await fetch(playlistsUrl(), {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action: add ? 'add_track' : 'remove_track', id, rel: ppTrack.rel })
+      });
+      const data = await res.json();
+      if(data && data.playlists) playlists = data.playlists;
+    } catch(e){}
+    render();
+  }
+
+  ppCreateForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = ppCreateInput.value.trim();
+    if(!name || !ppTrack) return;
+    try{
+      const res = await fetch(playlistsUrl(), {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action: 'create', name })
+      });
+      const data = await res.json();
+      if(data && data.ok && data.id){
+        const res2 = await fetch(playlistsUrl(), {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ action: 'add_track', id: data.id, rel: ppTrack.rel })
+        });
+        const data2 = await res2.json();
+        if(data2 && data2.playlists) playlists = data2.playlists;
+      }
+    } catch(e){}
+    ppCreateInput.value = '';
+    renderPopoverList();
+    render();
+  });
+
+  function updateHeartBtn(btnEl, active){
+    if(!btnEl) return;
+    btnEl.classList.toggle('active', active);
+    btnEl.innerHTML = heartIcon(active);
+  }
+
+  async function toggleFavorite(track, btnEl){
+    const newVal = !track.favorite;
+    track.favorite = newVal;
+    updateHeartBtn(btnEl, newVal);
+    if(currentTrackRef === track) updateHeartBtn(pbHeartBtn, newVal);
+
+    try{
+      const res = await fetch(`${MUSIC_SERVER}/favorite?key=${encodeURIComponent(accessKey)}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ rel: track.rel, favorite: newVal })
+      });
+      if(!res.ok) throw new Error('failed');
+    } catch(e){
+      track.favorite = !newVal;
+      updateHeartBtn(btnEl, !newVal);
+      if(currentTrackRef === track) updateHeartBtn(pbHeartBtn, !newVal);
+      return;
+    }
+    if(!view) return;
+    render();
+  }
+
+  pbHeartBtn.addEventListener('click', () => {
+    if(currentTrackRef) toggleFavorite(currentTrackRef, pbHeartBtn);
+  });
 
   // ---------- PLAYBACK ----------
   function playFromList(list, i){
@@ -623,10 +1046,23 @@
     currentTrackRef = list[i];
     loadAndPlay(currentTrackRef);
     buildShuffleOrder();
-    if(view === 'artist' || view === 'search') renderTrackRows(currentList, view);
+    if(view === 'artist' || view === 'search' || view === 'favorites' || view === 'playlist') renderTrackRows(currentList, (view === 'favorites' || view === 'playlist') ? 'search' : view);
+  }
+
+  function setBuffering(active){
+    bufferSpinner.style.display = active ? 'flex' : 'none';
+    playBtn.style.visibility = active ? 'hidden' : 'visible';
+    pbBuffering.style.display = active ? 'block' : 'none';
+    pbArtist.style.display = active ? 'none' : 'block';
   }
 
   function loadAndPlay(track){
+    progressFill.style.width = '0%';
+    progressHandle.style.left = '0%';
+    progressBuffered.style.width = '0%';
+    curTimeEl.textContent = '0:00';
+    durTimeEl.textContent = '0:00';
+    setBuffering(true);
     audioEl.src = trackUrl(track.rel);
     pbTitle.textContent = track.title || track.rel;
     pbArtist.textContent = track.artist || 'Неизвестный исполнитель';
@@ -637,7 +1073,21 @@
       pbCover.style.cssText = placeholderStyle(track.artist || track.title || '?');
       pbCover.textContent = initial(track.title);
     }
+    updateHeartBtn(pbHeartBtn, !!track.favorite);
+    updateMediaSessionMetadata(track);
     audioEl.play().then(()=>{ isPlaying = true; updatePlayIcon(); }).catch(()=>{});
+  }
+
+  function doPlay(){
+    if(currentIndex === -1){
+      if(currentList.length) playFromList(currentList, 0);
+      return;
+    }
+    if(!isPlaying){ audioEl.play(); isPlaying = true; updatePlayIcon(); }
+  }
+
+  function doPause(){
+    if(isPlaying){ audioEl.pause(); isPlaying = false; updatePlayIcon(); }
   }
 
   function togglePlay(){
@@ -645,14 +1095,65 @@
       if(currentList.length) playFromList(currentList, 0);
       return;
     }
-    if(isPlaying){ audioEl.pause(); isPlaying = false; }
-    else { audioEl.play(); isPlaying = true; }
-    updatePlayIcon();
+    if(isPlaying) doPause(); else doPlay();
   }
+
+  // ---------- MEDIA SESSION (наушники / Bluetooth / экран блокировки) ----------
+  function updateMediaSessionMetadata(track){
+    if(!('mediaSession' in navigator)) return;
+    try{
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title || track.rel,
+        artist: track.artist || 'Неизвестный исполнитель',
+        album: track.album || '',
+        artwork: track.hasArt ? [{ src: artUrl(track.rel), sizes: '320x320', type: 'image/jpeg' }] : []
+      });
+    } catch(e){}
+  }
+
+  function updateMediaSessionPositionState(){
+    if(!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+    if(!audioEl.duration || !isFinite(audioEl.duration)) return;
+    try{
+      navigator.mediaSession.setPositionState({
+        duration: audioEl.duration,
+        playbackRate: audioEl.playbackRate || 1,
+        position: Math.min(audioEl.currentTime, audioEl.duration)
+      });
+    } catch(e){}
+  }
+
+  (function setupMediaSession(){
+    if(!('mediaSession' in navigator)) return;
+    const safeSet = (action, handler) => {
+      try{ navigator.mediaSession.setActionHandler(action, handler); } catch(e){}
+    };
+    safeSet('play', doPlay);
+    safeSet('pause', doPause);
+    safeSet('previoustrack', () => prevTrack());
+    safeSet('nexttrack', () => nextTrack(false));
+    safeSet('seekbackward', (details) => {
+      audioEl.currentTime = Math.max(0, audioEl.currentTime - (details.seekOffset || 10));
+    });
+    safeSet('seekforward', (details) => {
+      audioEl.currentTime = Math.min(audioEl.duration || 0, audioEl.currentTime + (details.seekOffset || 10));
+    });
+    safeSet('seekto', (details) => {
+      if(details.seekTime != null) audioEl.currentTime = details.seekTime;
+    });
+    safeSet('stop', () => { doPause(); audioEl.currentTime = 0; });
+  })();
+
+  audioEl.addEventListener('play', () => {
+    if('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+  });
+  audioEl.addEventListener('pause', () => {
+    if('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  });
 
   function updatePlayIcon(){
     playIcon.innerHTML = isPlaying ? PAUSE_SVG : PLAY_SVG;
-    if(view === 'artist' || view === 'search') renderTrackRows(currentList, view);
+    if(view === 'artist' || view === 'search' || view === 'favorites' || view === 'playlist') renderTrackRows(currentList, (view === 'favorites' || view === 'playlist') ? 'search' : view);
   }
 
   function buildShuffleOrder(){
@@ -706,6 +1207,21 @@
   });
 
   audioEl.addEventListener('ended', () => nextTrack(true));
+  audioEl.addEventListener('waiting', () => setBuffering(true));
+  audioEl.addEventListener('stalled', () => setBuffering(true));
+  audioEl.addEventListener('playing', () => setBuffering(false));
+  audioEl.addEventListener('canplay', () => setBuffering(false));
+  audioEl.addEventListener('error', () => setBuffering(false));
+
+  function updateBufferedBar(){
+    if(!audioEl.duration || !isFinite(audioEl.duration) || audioEl.buffered.length === 0) return;
+    const end = audioEl.buffered.end(audioEl.buffered.length - 1);
+    const pct = Math.min(100, (end / audioEl.duration) * 100);
+    progressBuffered.style.width = pct + '%';
+  }
+  audioEl.addEventListener('progress', updateBufferedBar);
+  audioEl.addEventListener('loadedmetadata', updateBufferedBar);
+  audioEl.addEventListener('loadedmetadata', updateMediaSessionPositionState);
 
   audioEl.addEventListener('timeupdate', () => {
     if(!audioEl.duration) return;
@@ -714,6 +1230,7 @@
     progressHandle.style.left = pct + '%';
     curTimeEl.textContent = fmtTime(audioEl.currentTime);
     durTimeEl.textContent = fmtTime(audioEl.duration);
+    updateMediaSessionPositionState();
   });
 
   progressBar.addEventListener('click', (e) => {

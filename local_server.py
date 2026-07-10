@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-Balls Music — локальный сервер музыки (с тегами и обложками).
+Balls Music — локальный сервер музыки (с тегами, обложками и избранным).
 
 Запускается на вашем ПК, где хранится музыка. Раздаёт:
-  - GET /manifest.json   -> список треков с тегами (исполнитель/альбом/длительность), JSON
-  - GET /music/<путь>    -> сам аудиофайл (с поддержкой перемотки / Range-запросов)
-  - GET /art/<путь>      -> обложка, встроенная в файл (если есть)
+  - GET  /manifest.json   -> список треков с тегами и отметкой избранного, JSON
+  - GET  /music/<путь>    -> сам аудиофайл (с поддержкой перемотки / Range-запросов)
+  - GET  /art/<путь>      -> обложка, встроенная в файл (если есть)
+  - POST /favorite        -> добавить/убрать трек из избранного, JSON {"rel": "...", "favorite": true}
 
 Все запросы (кроме OPTIONS) требуют параметр ?key=ВАШ_КОД — см. ACCESS_KEY ниже.
 
 Требуется библиотека mutagen для чтения тегов и обложек:
     pip install mutagen --break-system-packages
     (на Windows/Mac обычно без флага:  pip install mutagen)
+
+Опционально — Pillow, чтобы обложки отдавались уменьшенными превью (экономит канал
+и ускоряет загрузку треков, особенно если в файлах большие встроенные обложки):
+    pip install Pillow --break-system-packages
 
 Использование:
 1. Положите этот файл рядом с папкой "music" (там ваша музыка, можно с подпапками).
@@ -24,6 +29,7 @@ import socketserver
 import os
 import re
 import json
+import uuid
 import mimetypes
 from urllib.parse import unquote, urlparse, parse_qs
 
@@ -39,6 +45,8 @@ except ImportError:
 MUSIC_DIR = "music"
 PORT = 8080
 EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus", ".weba", ".webm"}
+FAVORITES_FILE = "favorites.json"
+PLAYLISTS_FILE = "playlists.json"
 
 # Секретный код доступа. Замените на свой — этот же код нужно будет ввести на сайте.
 ACCESS_KEY = "7510"
@@ -46,6 +54,49 @@ ACCESS_KEY = "7510"
 # Можно сузить до адреса вашего сайта вместо "*" для дополнительной строгости,
 # например: "https://ваш-логин.github.io"
 ALLOWED_ORIGIN = "*"
+
+# Избранное хранится в отдельном json-файле рядом со скриптом, чтобы переживало перезапуски.
+_favorites = set()
+
+# Плейлисты: {id: {"name": str, "tracks": [rel, ...]}}, тоже в отдельном файле.
+_playlists = {}
+
+
+def load_favorites():
+    global _favorites
+    if os.path.isfile(FAVORITES_FILE):
+        try:
+            with open(FAVORITES_FILE, "r", encoding="utf-8") as fh:
+                _favorites = set(json.load(fh))
+        except Exception:
+            _favorites = set()
+
+
+def save_favorites():
+    try:
+        with open(FAVORITES_FILE, "w", encoding="utf-8") as fh:
+            json.dump(sorted(_favorites), fh, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def load_playlists():
+    global _playlists
+    if os.path.isfile(PLAYLISTS_FILE):
+        try:
+            with open(PLAYLISTS_FILE, "r", encoding="utf-8") as fh:
+                _playlists = json.load(fh)
+        except Exception:
+            _playlists = {}
+
+
+def save_playlists():
+    try:
+        with open(PLAYLISTS_FILE, "w", encoding="utf-8") as fh:
+            json.dump(_playlists, fh, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 
 # Кэш тегов: {rel_path: (mtime, size, meta_dict)} — чтобы не перечитывать теги
 # у всех файлов при каждом обновлении библиотеки.
@@ -111,6 +162,17 @@ def read_meta(full_path, rel_path, ext):
     return meta
 
 
+try:
+    from PIL import Image
+    import io
+    HAVE_PILLOW = True
+except ImportError:
+    HAVE_PILLOW = False
+
+THUMB_MAX_SIDE = 320
+_thumb_cache = {}  # rel -> (mtime, size, jpeg_bytes)
+
+
 def get_cover_bytes(full_path, ext):
     try:
         if ext == "mp3":
@@ -135,6 +197,36 @@ def get_cover_bytes(full_path, ext):
     return None, None
 
 
+def get_thumb_bytes(full_path, rel, ext):
+    """Уменьшенная копия обложки (JPEG, до THUMB_MAX_SIDE px) — экономит канал
+    при просмотре сетки исполнителей и списков треков. Кэшируется в памяти."""
+    try:
+        stat = os.stat(full_path)
+    except OSError:
+        return None, None
+    cached = _thumb_cache.get(rel)
+    if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+        return cached[2], "image/jpeg"
+
+    data, mime = get_cover_bytes(full_path, ext)
+    if not data:
+        return None, None
+    if not HAVE_PILLOW:
+        return data, mime  # отдаём оригинал, если Pillow не установлен
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        img = img.convert("RGB")
+        img.thumbnail((THUMB_MAX_SIDE, THUMB_MAX_SIDE))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=82)
+        thumb_bytes = buf.getvalue()
+        _thumb_cache[rel] = (stat.st_mtime, stat.st_size, thumb_bytes)
+        return thumb_bytes, "image/jpeg"
+    except Exception:
+        return data, mime  # если PIL не смог разобрать формат — отдаём оригинал
+
+
 def scan_tracks():
     tracks = []
     for root, _dirs, files in os.walk(MUSIC_DIR):
@@ -156,6 +248,8 @@ def scan_tracks():
                 _tag_cache[rel] = (stat.st_mtime, stat.st_size, meta)
             track = {"rel": rel, "ext": ext}
             track.update(meta)
+            track["favorite"] = rel in _favorites
+            track["playlistIds"] = [pid for pid, pl in _playlists.items() if rel in pl.get("tracks", [])]
             tracks.append(track)
     tracks.sort(key=lambda t: (
         (t["artist"] or "").lower(),
@@ -200,16 +294,116 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         self._handle(send_body=False)
 
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        if path == "/favorite":
+            self.handle_favorite()
+        elif path == "/playlists":
+            self.handle_playlists_post()
+        else:
+            self.send_error(404, "Not found")
+
+    def _read_json_body(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except Exception:
+            return {}
+
+    def _send_json(self, obj, status=200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def handle_favorite(self):
+        if not self._check_key():
+            return
+        data = self._read_json_body()
+        rel = data.get("rel")
+        want_favorite = bool(data.get("favorite"))
+
+        ok = False
+        if rel and self._resolve(rel):
+            if want_favorite:
+                _favorites.add(rel)
+            else:
+                _favorites.discard(rel)
+            save_favorites()
+            ok = True
+
+        self._send_json({"ok": ok}, 200 if ok else 400)
+
+    def handle_playlists_post(self):
+        if not self._check_key():
+            return
+        data = self._read_json_body()
+        action = data.get("action")
+        ok = False
+        new_id = None
+
+        if action == "create":
+            name = (data.get("name") or "").strip()[:120] or "Новый плейлист"
+            new_id = uuid.uuid4().hex[:10]
+            _playlists[new_id] = {"name": name, "tracks": []}
+            ok = True
+        elif action == "rename":
+            pid = data.get("id")
+            name = (data.get("name") or "").strip()[:120]
+            if pid in _playlists and name:
+                _playlists[pid]["name"] = name
+                ok = True
+        elif action == "delete":
+            pid = data.get("id")
+            if pid in _playlists:
+                del _playlists[pid]
+                ok = True
+        elif action == "add_track":
+            pid = data.get("id")
+            rel = data.get("rel")
+            if pid in _playlists and rel and self._resolve(rel):
+                if rel not in _playlists[pid]["tracks"]:
+                    _playlists[pid]["tracks"].append(rel)
+                ok = True
+        elif action == "remove_track":
+            pid = data.get("id")
+            rel = data.get("rel")
+            if pid in _playlists and rel in _playlists[pid].get("tracks", []):
+                _playlists[pid]["tracks"].remove(rel)
+                ok = True
+
+        if ok:
+            save_playlists()
+        self._send_json({"ok": ok, "id": new_id, "playlists": _playlists}, 200 if ok else 400)
+
     def _handle(self, send_body):
         path = self.path.split("?")[0]
         if path in ("/manifest.json", "/"):
             self.serve_manifest(send_body)
+        elif path == "/playlists":
+            self.serve_playlists(send_body)
         elif path.startswith("/music/"):
             self.serve_file(path[len("/music/"):], send_body)
         elif path.startswith("/art/"):
             self.serve_art(path[len("/art/"):], send_body)
         else:
             self.send_error(404, "Not found")
+
+    def serve_playlists(self, send_body=True):
+        if not self._check_key():
+            return
+        body = json.dumps(_playlists, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors()
+        self.end_headers()
+        if send_body:
+            self.wfile.write(body)
 
     def serve_manifest(self, send_body=True):
         if not self._check_key():
@@ -240,7 +434,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "No cover")
             return
         ext = os.path.splitext(full)[1].lower().lstrip(".")
-        data, mime = get_cover_bytes(full, ext)
+        query = parse_qs(urlparse(self.path).query)
+        size = query.get("size", ["thumb"])[0]
+        if size == "full":
+            data, mime = get_cover_bytes(full, ext)
+        else:
+            data, mime = get_thumb_bytes(full, rel, ext)
         if not data:
             self.send_error(404, "No cover")
             return
@@ -316,9 +515,19 @@ if __name__ == "__main__":
         print("Создайте папку 'music' и положите в неё аудиофайлы, затем запустите скрипт снова.")
         raise SystemExit(1)
 
+    load_favorites()
+    load_playlists()
+
     if not HAVE_MUTAGEN:
         print("ВНИМАНИЕ: библиотека mutagen не установлена — теги и обложки читаться не будут,")
         print("сайт покажет только имена файлов. Установите:  pip install mutagen --break-system-packages")
+        print()
+
+    if HAVE_MUTAGEN and not HAVE_PILLOW:
+        print("Совет: установите Pillow, чтобы обложки сжимались в превью и не грузили канал:")
+        print("   pip install Pillow --break-system-packages")
+        print("Без неё обложки будут отдаваться в оригинальном размере — это и есть частая")
+        print("причина медленной загрузки треков, если в файлах большие встроенные обложки.")
         print()
 
     with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), Handler) as httpd:
