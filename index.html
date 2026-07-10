@@ -154,6 +154,15 @@
   .view-title-row .view-title{ margin-right:4px; }
   .section-gap{ margin-top:38px; }
 
+  .lib-tabs{ display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .lib-tab{
+    background:none; border:1px solid var(--border); color:var(--muted);
+    padding:7px 15px; border-radius:20px; font-size:12.5px; cursor:pointer;
+    transition:border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .lib-tab:hover{ border-color:var(--amber-dim); color:var(--text); }
+  .lib-tab.active{ background:var(--amber); border-color:var(--amber); color:#181510; font-weight:600; }
+
   /* ---------- TRACK TABLE ---------- */
   .track-table{ width:100%; border-collapse:collapse; }
   .track-row{
@@ -432,7 +441,7 @@
 
 <script>
 (function(){
-  const MUSIC_SERVER = 'https://bon-timer-lopez-era.trycloudflare.com';
+  const MUSIC_SERVER = 'https://ВАШ-АДРЕС.trycloudflare.com';
 
   let accessKey = '';
   function manifestUrl(){ return `${MUSIC_SERVER}/manifest.json?key=${encodeURIComponent(accessKey)}`; }
@@ -485,10 +494,13 @@
   let shuffle = false;
   let repeatMode = 0; // 0 off, 1 all, 2 one
   let shuffleOrder = [];
-  let view = 'artists'; // 'artists' | 'artist' | 'search' | 'favorites' | 'playlist'
+  let view = 'home'; // 'home' | 'artist' | 'album' | 'search' | 'favorites' | 'playlist'
+  let libraryTab = 'artists'; // 'artists' | 'albums' | 'all' — какая вкладка видна на 'home'
+  let allTracksSort = 'recent'; // 'recent' | 'alpha' — сортировка вкладки "Все треки"
   let currentPlaylistId = null;
   let currentQuery = '';
   let currentArtistName = null;
+  let currentAlbumKey = null;
 
   const PLAY_SVG = '<path d="M8 5v14l11-7z"/>';
   const PAUSE_SVG = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
@@ -566,8 +578,9 @@
   // ---------- LIBRARY ----------
   function setLibrary(list){
     allTracks = Array.isArray(list) ? list : [];
-    view = 'artists';
+    view = 'home';
     currentArtistName = null;
+    currentAlbumKey = null;
     render();
   }
 
@@ -582,40 +595,51 @@
       .finally(() => setTimeout(() => refreshBtn.classList.remove('spinning'), 400));
   });
 
+  function fallbackView(){
+    if(currentPlaylistId) return 'playlist';
+    if(currentArtistName) return 'artist';
+    if(currentAlbumKey) return 'album';
+    return 'home';
+  }
+
   searchInput.addEventListener('input', () => {
     const q = searchInput.value.trim();
     currentQuery = q;
     if(q){ view = 'search'; render(q); }
-    else if(currentPlaylistId){ view = 'playlist'; render(); }
-    else { view = currentArtistName ? 'artist' : 'artists'; render(); }
+    else { view = fallbackView(); render(); }
   });
 
   favoritesBtn.addEventListener('click', () => {
     view = 'favorites';
     currentArtistName = null;
     currentPlaylistId = null;
+    currentAlbumKey = null;
     searchInput.value = '';
     render();
   });
 
   backBtn.addEventListener('click', () => {
-    view = 'artists';
+    view = 'home';
     currentArtistName = null;
     currentPlaylistId = null;
+    currentAlbumKey = null;
     searchInput.value = '';
     render();
   });
 
   // ---------- RENDER ----------
   function render(query){
-    if(view === 'artists') return renderArtists();
+    if(view === 'home') return renderHome();
     if(view === 'artist') return renderArtistDetail(currentArtistName);
+    if(view === 'album') return renderAlbumDetail(currentAlbumKey);
     if(view === 'search') return renderSearch(query != null ? query : currentQuery);
     if(view === 'favorites') return renderFavorites();
     if(view === 'playlist') return renderPlaylistDetail(currentPlaylistId);
   }
 
-  function renderArtists(){
+  function albumOf(t){ return t.album && t.album.trim() ? t.album.trim() : 'Без альбома'; }
+
+  function renderHome(){
     backBtn.style.display = 'none';
     if(allTracks.length === 0){
       viewEl.innerHTML = `<div class="empty-state">
@@ -625,13 +649,6 @@
       </div>`;
       return;
     }
-    const byArtist = new Map();
-    allTracks.forEach(t => {
-      const name = artistOf(t);
-      if(!byArtist.has(name)) byArtist.set(name, []);
-      byArtist.get(name).push(t);
-    });
-    const artists = Array.from(byArtist.entries()).sort((a,b) => a[0].localeCompare(b[0], 'ru'));
 
     const favCount = allTracks.filter(t => t.favorite).length;
     const favTile = `
@@ -668,20 +685,72 @@
       </div>
     `;
 
-    const cards = artists.map(([name, tracks]) => {
-      const withArt = tracks.find(t => t.hasArt);
-      const coverInner = withArt
-        ? `<img src="${artUrl(withArt.rel)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.innerHTML='${initial(name)}'; this.parentElement.removeAttribute('style'); this.parentElement.style.cssText='${placeholderStyle(name)}';">`
-        : initial(name);
-      const style = withArt ? '' : placeholderStyle(name);
-      return `
-        <div class="artist-card" data-artist="${escapeHtml(name)}">
-          <div class="artist-cover" style="${style}">${coverInner}</div>
-          <div class="artist-name">${escapeHtml(name)}</div>
-          <div class="artist-count">${tracks.length} ${pluralize(tracks.length,'трек','трека','треков')}</div>
+    const tabBar = `
+      <div class="lib-tabs">
+        <button class="lib-tab ${libraryTab === 'artists' ? 'active' : ''}" data-tab="artists">Исполнители</button>
+        <button class="lib-tab ${libraryTab === 'albums' ? 'active' : ''}" data-tab="albums">Альбомы</button>
+        <button class="lib-tab ${libraryTab === 'all' ? 'active' : ''}" data-tab="all">Все треки</button>
+      </div>
+    `;
+
+    let tabContent = '';
+    if(libraryTab === 'artists'){
+      const byArtist = new Map();
+      allTracks.forEach(t => {
+        const name = artistOf(t);
+        if(!byArtist.has(name)) byArtist.set(name, []);
+        byArtist.get(name).push(t);
+      });
+      const artists = Array.from(byArtist.entries()).sort((a,b) => a[0].localeCompare(b[0], 'ru'));
+      const cards = artists.map(([name, tracks]) => {
+        const withArt = tracks.find(t => t.hasArt);
+        const coverInner = withArt
+          ? `<img src="${artUrl(withArt.rel)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.innerHTML='${initial(name)}'; this.parentElement.removeAttribute('style'); this.parentElement.style.cssText='${placeholderStyle(name)}';">`
+          : initial(name);
+        const style = withArt ? '' : placeholderStyle(name);
+        return `
+          <div class="artist-card" data-artist="${escapeHtml(name)}">
+            <div class="artist-cover" style="${style}">${coverInner}</div>
+            <div class="artist-name">${escapeHtml(name)}</div>
+            <div class="artist-count">${tracks.length} ${pluralize(tracks.length,'трек','трека','треков')}</div>
+          </div>
+        `;
+      }).join('');
+      tabContent = `<div class="artist-grid">${cards}</div>`;
+    } else if(libraryTab === 'albums'){
+      const byAlbum = new Map();
+      allTracks.forEach(t => {
+        const key = albumOf(t);
+        if(!byAlbum.has(key)) byAlbum.set(key, []);
+        byAlbum.get(key).push(t);
+      });
+      const albums = Array.from(byAlbum.entries()).sort((a,b) => a[0].localeCompare(b[0], 'ru'));
+      const cards = albums.map(([name, tracks]) => {
+        const withArt = tracks.find(t => t.hasArt);
+        const artistsInAlbum = new Set(tracks.map(t => artistOf(t)));
+        const subtitle = artistsInAlbum.size === 1 ? [...artistsInAlbum][0] : 'Разные исполнители';
+        const coverInner = withArt
+          ? `<img src="${artUrl(withArt.rel)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:12px;">`
+          : initial(name);
+        const style = withArt ? '' : placeholderStyle(name);
+        return `
+          <div class="artist-card" data-album="${escapeHtml(name)}">
+            <div class="artist-cover square" style="${style}">${coverInner}</div>
+            <div class="artist-name">${escapeHtml(name)}</div>
+            <div class="artist-count">${escapeHtml(subtitle)}</div>
+          </div>
+        `;
+      }).join('');
+      tabContent = `<div class="artist-grid">${cards}</div>`;
+    } else {
+      const sortTabs = `
+        <div class="lib-tabs" style="margin-bottom:16px;">
+          <button class="lib-tab ${allTracksSort === 'recent' ? 'active' : ''}" data-sort="recent">Недавно добавленные</button>
+          <button class="lib-tab ${allTracksSort === 'alpha' ? 'active' : ''}" data-sort="alpha">По алфавиту</button>
         </div>
       `;
-    }).join('');
+      tabContent = `${sortTabs}<div class="track-table" id="trackTableBody"></div>`;
+    }
 
     viewEl.innerHTML = `
       <div class="view-header">
@@ -692,13 +761,16 @@
 
       <div class="view-header section-gap">
         <div class="view-eyebrow">библиотека</div>
-        <div class="view-title">Исполнители</div>
+        <div class="view-title">Медиатека</div>
       </div>
-      <div class="artist-grid">${cards}</div>
+      ${tabBar}
+      ${tabContent}
     `;
+
     const favTileEl = viewEl.querySelector('[data-favorites]');
     if(favTileEl) favTileEl.addEventListener('click', () => {
       view = 'favorites';
+      currentArtistName = null; currentPlaylistId = null; currentAlbumKey = null;
       searchInput.value = '';
       render();
     });
@@ -707,7 +779,7 @@
     viewEl.querySelectorAll('.artist-card[data-playlist]').forEach(card => {
       card.addEventListener('click', () => {
         currentPlaylistId = card.dataset.playlist;
-        currentArtistName = null;
+        currentArtistName = null; currentAlbumKey = null;
         view = 'playlist';
         searchInput.value = '';
         render();
@@ -716,12 +788,58 @@
     viewEl.querySelectorAll('.artist-card[data-artist]').forEach(card => {
       card.addEventListener('click', () => {
         currentArtistName = card.dataset.artist;
-        currentPlaylistId = null;
+        currentPlaylistId = null; currentAlbumKey = null;
         view = 'artist';
         searchInput.value = '';
         render();
       });
     });
+    viewEl.querySelectorAll('.artist-card[data-album]').forEach(card => {
+      card.addEventListener('click', () => {
+        currentAlbumKey = card.dataset.album;
+        currentArtistName = null; currentPlaylistId = null;
+        view = 'album';
+        searchInput.value = '';
+        render();
+      });
+    });
+    viewEl.querySelectorAll('.lib-tabs .lib-tab[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        libraryTab = btn.dataset.tab;
+        renderHome();
+      });
+    });
+    viewEl.querySelectorAll('.lib-tabs .lib-tab[data-sort]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        allTracksSort = btn.dataset.sort;
+        renderHome();
+      });
+    });
+
+    if(libraryTab === 'all'){
+      const sorted = allTracks.slice().sort((a, b) => {
+        if(allTracksSort === 'recent') return (b.addedAt || 0) - (a.addedAt || 0);
+        return (a.title || '').localeCompare(b.title || '', 'ru');
+      });
+      currentList = sorted;
+      renderTrackRows(sorted, 'search');
+    }
+  }
+
+  function renderAlbumDetail(name){
+    backBtn.style.display = 'flex';
+    const tracks = allTracks
+      .filter(t => albumOf(t) === name)
+      .sort((a,b) => (a.trackNumber ?? 9999) - (b.trackNumber ?? 9999) || (a.title||'').localeCompare(b.title||'', 'ru'));
+    currentList = tracks;
+    viewEl.innerHTML = `
+      <div class="view-header">
+        <div class="view-eyebrow">альбом</div>
+        <div class="view-title">${escapeHtml(name)}</div>
+      </div>
+      <div class="track-table" id="trackTableBody"></div>
+    `;
+    renderTrackRows(tracks, 'album');
   }
 
   function renderArtistDetail(name){
@@ -785,8 +903,8 @@
     backBtn.style.display = 'flex';
     const pl = playlists[id];
     if(!pl){
-      view = 'artists';
-      return renderArtists();
+      view = 'home';
+      return renderHome();
     }
     const byRel = new Map(allTracks.map(t => [t.rel, t]));
     const tracks = pl.tracks.map(rel => byRel.get(rel)).filter(Boolean);
@@ -863,7 +981,7 @@
       const data = await res.json();
       if(data && data.playlists) playlists = data.playlists;
     } catch(e){}
-    view = 'artists';
+    view = 'home';
     render();
   }
 
@@ -883,7 +1001,9 @@
         : (i+1);
       const sub = context === 'artist'
         ? (t.album || '—')
-        : [t.artist, t.album].filter(Boolean).join(' · ') || '—';
+        : context === 'album'
+          ? (t.artist || 'Неизвестный исполнитель')
+          : [t.artist, t.album].filter(Boolean).join(' · ') || '—';
       const thumbStyle = t.hasArt ? '' : placeholderStyle(t.artist || t.title || '?');
       const thumbInner = t.hasArt
         ? `<img src="${artUrl(t.rel)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:5px;" onerror="this.parentElement.textContent='${initial(t.title)}';this.parentElement.style.cssText='${thumbStyle}';">`
@@ -1046,7 +1166,7 @@
     currentTrackRef = list[i];
     loadAndPlay(currentTrackRef);
     buildShuffleOrder();
-    if(view === 'artist' || view === 'search' || view === 'favorites' || view === 'playlist') renderTrackRows(currentList, (view === 'favorites' || view === 'playlist') ? 'search' : view);
+    refreshVisibleRows();
   }
 
   function setBuffering(active){
@@ -1088,6 +1208,14 @@
 
   function doPause(){
     if(isPlaying){ audioEl.pause(); isPlaying = false; updatePlayIcon(); }
+  }
+
+  function refreshVisibleRows(){
+    if(view === 'artist') return renderTrackRows(currentList, 'artist');
+    if(view === 'album') return renderTrackRows(currentList, 'album');
+    if(view === 'search') return renderTrackRows(currentList, 'search');
+    if(view === 'favorites' || view === 'playlist') return renderTrackRows(currentList, 'search');
+    if(view === 'home' && libraryTab === 'all') return renderTrackRows(currentList, 'search');
   }
 
   function togglePlay(){
@@ -1153,7 +1281,7 @@
 
   function updatePlayIcon(){
     playIcon.innerHTML = isPlaying ? PAUSE_SVG : PLAY_SVG;
-    if(view === 'artist' || view === 'search' || view === 'favorites' || view === 'playlist') renderTrackRows(currentList, (view === 'favorites' || view === 'playlist') ? 'search' : view);
+    refreshVisibleRows();
   }
 
   function buildShuffleOrder(){

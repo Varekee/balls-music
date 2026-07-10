@@ -49,7 +49,7 @@ FAVORITES_FILE = "favorites.json"
 PLAYLISTS_FILE = "playlists.json"
 
 # Секретный код доступа. Замените на свой — этот же код нужно будет ввести на сайте.
-ACCESS_KEY = "7510"
+ACCESS_KEY = "замените-меня-на-свой-код"
 
 # Можно сузить до адреса вашего сайта вместо "*" для дополнительной строгости,
 # например: "https://ваш-логин.github.io"
@@ -227,6 +227,17 @@ def get_thumb_bytes(full_path, rel, ext):
         return data, mime  # если PIL не смог разобрать формат — отдаём оригинал
 
 
+def get_added_time(stat):
+    """Лучшее доступное приближение к 'дате добавления' файла на диск.
+    macOS даёт настоящую дату создания, Windows — тоже (через st_ctime),
+    на Linux честной даты создания не существует — берём дату изменения."""
+    if hasattr(stat, "st_birthtime"):
+        return stat.st_birthtime
+    if os.name == "nt":
+        return stat.st_ctime
+    return stat.st_mtime
+
+
 def scan_tracks():
     tracks = []
     for root, _dirs, files in os.walk(MUSIC_DIR):
@@ -250,6 +261,7 @@ def scan_tracks():
             track.update(meta)
             track["favorite"] = rel in _favorites
             track["playlistIds"] = [pid for pid, pl in _playlists.items() if rel in pl.get("tracks", [])]
+            track["addedAt"] = get_added_time(stat)
             tracks.append(track)
     tracks.sort(key=lambda t: (
         (t["artist"] or "").lower(),
@@ -265,9 +277,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Range")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Range, Content-Type")
         self.send_header("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges")
+        self.send_header("Access-Control-Max-Age", "86400")
 
     def _check_key(self):
         query = parse_qs(urlparse(self.path).query)
