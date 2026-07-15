@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Электросхема — проходные и перекрёстные выключатели</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c1a2b;
+    --bg2:#0f2038;
+    --grid:rgba(126,178,230,0.07);
+    --grid-strong:rgba(126,178,230,0.14);
+    --panel:#0a1524;
+    --panel2:#0e1e33;
+    --line:#3a5a7d;
+    --ink:#eaf3fb;
+    --muted:#8ba3c0;
+    --copper:#ff9a44;
+    --copper-soft:#ffb066;
+    --glow:#ffd75e;
+    --danger:#ff6a6a;
+    --off:#2a4562;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #123156 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'JetBrains Mono', ui-monospace, Menlo, monospace;
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+    overflow:hidden;
+  }
+
+  header{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    padding:14px 20px;
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    border-bottom:1px solid var(--line);
+    flex-wrap:wrap;
+  }
+  .titleblock{margin-right:8px;}
+  .titleblock h1{
+    font-family:'Rajdhani', sans-serif;
+    font-weight:700;
+    font-size:22px;
+    letter-spacing:1px;
+    margin:0;
+    color:var(--ink);
+    text-transform:uppercase;
+  }
+  .titleblock h1 span{color:var(--copper);}
+  .titleblock p{
+    margin:2px 0 0;
+    font-size:11px;
+    color:var(--muted);
+    letter-spacing:.5px;
+  }
+
+  .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  button.tool{
+    background:var(--panel2);
+    border:1px solid var(--line);
+    color:var(--ink);
+    font-family:'Rajdhani', sans-serif;
+    font-weight:600;
+    letter-spacing:.4px;
+    font-size:13.5px;
+    padding:9px 14px;
+    border-radius:6px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    transition:border-color .15s, background .15s, transform .1s;
+  }
+  button.tool:hover{border-color:var(--copper); background:#122845;}
+  button.tool:active{transform:translateY(1px);}
+  button.tool.ghost{color:var(--muted);}
+  button.tool .ic{width:16px;height:16px;flex:none;}
+  button.tool.danger:hover{border-color:var(--danger); color:var(--danger);}
+  .spacer{flex:1;}
+
+  .dropdown-wrap{ position:relative; }
+  .dropdown-menu{
+    display:none;
+    position:absolute;
+    top:calc(100% + 6px);
+    left:0;
+    background:var(--panel2);
+    border:1px solid var(--line);
+    border-radius:8px;
+    box-shadow:0 12px 30px rgba(0,0,0,0.45);
+    padding:6px;
+    min-width:180px;
+    z-index:30;
+  }
+  .dropdown-menu.show{ display:block; }
+  .dropdown-menu button{
+    display:block;
+    width:100%;
+    text-align:left;
+    background:none;
+    border:none;
+    color:var(--ink);
+    font-family:'Rajdhani', sans-serif;
+    font-weight:600;
+    font-size:13.5px;
+    letter-spacing:.3px;
+    padding:8px 10px;
+    border-radius:5px;
+    cursor:pointer;
+  }
+  .dropdown-menu button:hover{ background:#122845; color:var(--copper-soft); }
+
+  main{
+    flex:1;
+    display:flex;
+    min-height:0;
+  }
+
+  #canvasWrap{
+    flex:1;
+    position:relative;
+    overflow:auto;
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      linear-gradient(var(--grid-strong) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-strong) 1px, transparent 1px);
+    background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+    background-attachment: local, local, local, local;
+  }
+  #board{ display:block; cursor:default; }
+
+  .comp-group{ cursor:grab; }
+  .comp-group:active{ cursor:grabbing; }
+  .body{
+    fill:rgba(15,32,54,0.9);
+    stroke:var(--line);
+    stroke-width:1.5;
+  }
+  .label{
+    fill:var(--muted);
+    font-family:'Rajdhani', sans-serif;
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:.5px;
+    text-transform:uppercase;
+    pointer-events:none;
+  }
+  .sublabel{
+    fill:var(--muted);
+    font-size:10px;
+    pointer-events:none;
+  }
+  .term-label{
+    fill:var(--copper-soft);
+    font-family:'JetBrains Mono', monospace;
+    font-size:10.5px;
+    font-weight:600;
+    pointer-events:none;
+  }
+
+  .wire{ stroke:var(--off); stroke-width:3; stroke-linecap:round; fill:none; }
+  .wire.live{
+    stroke:var(--copper);
+    stroke-width:3.4;
+    filter:drop-shadow(0 0 5px var(--glow));
+    stroke-dasharray:9 7;
+    animation:flow .6s linear infinite;
+  }
+  .wire-hit{ stroke:transparent; stroke-width:16; fill:none; cursor:pointer; }
+  @keyframes flow{ to{ stroke-dashoffset:-32; } }
+
+  .conn{ stroke:var(--off); stroke-width:3; stroke-linecap:round; }
+  .conn.live{ stroke:var(--copper); stroke-width:3.6; filter:drop-shadow(0 0 5px var(--glow)); }
+  .conn-inactive{ stroke:var(--line); stroke-width:2; stroke-dasharray:3 4; opacity:.55; }
+
+  .terminal{
+    fill:#152a45; stroke:var(--line); stroke-width:2; cursor:pointer;
+    transition:fill .1s, stroke .1s;
+  }
+  .terminal:hover{ stroke:var(--copper-soft); }
+  .terminal.live{ fill:var(--glow); stroke:var(--copper); }
+  .terminal.pending{ fill:var(--copper); stroke:var(--glow); animation:pulse .8s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ r:6; } 50%{ r:8.5; } }
+
+  .lamp-body{ fill:rgba(20,38,60,0.9); stroke:var(--line); stroke-width:2; transition:fill .25s, stroke .25s, filter .25s; }
+  .lamp-body.lit{ fill:rgba(255,215,94,0.35); stroke:var(--glow); filter:drop-shadow(0 0 16px var(--glow)); }
+  .lamp-x{ stroke:var(--line); stroke-width:1.5; }
+  .lamp-body.lit ~ .lamp-x{ stroke:#4a3a12; }
+
+  .hover-zone{ fill:transparent; }
+  .del-btn{ opacity:0; pointer-events:none; cursor:pointer; transition:opacity .12s; }
+  .comp-group:hover .del-btn{ opacity:1; pointer-events:auto; }
+  .del-btn circle{ fill:#25405e; stroke:var(--danger); stroke-width:1.5; }
+  .del-btn text{ fill:var(--danger); font-size:11px; font-family:'Rajdhani',sans-serif; font-weight:700; pointer-events:none; }
+  .del-btn:hover circle{ fill:var(--danger); }
+  .del-btn:hover text{ fill:#1a0e0e; }
+
+  .wire-del{ opacity:0; pointer-events:none; cursor:pointer; transition:opacity .12s; }
+  .wire-group:hover .wire-del{ opacity:1; pointer-events:auto; }
+  .wire-del circle{ fill:#25405e; stroke:var(--danger); stroke-width:1.5; }
+  .wire-del text{ fill:var(--danger); font-size:11px; font-family:'Rajdhani',sans-serif; font-weight:700; pointer-events:none; }
+  .wire-del:hover circle{ fill:var(--danger); }
+  .wire-del:hover text{ fill:#1a0e0e; }
+
+  #tempWire{ stroke:var(--copper-soft); stroke-width:2.5; stroke-dasharray:6 5; display:none; pointer-events:none; }
+
+  .src-plate{ fill:rgba(20,38,60,0.9); stroke:var(--copper); stroke-width:1.5; }
+  .src-sign{ fill:var(--copper-soft); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:18px; pointer-events:none;}
+
+  .key-btn{ fill:#1c3452; stroke:var(--line); stroke-width:1.5; cursor:pointer; transition:fill .12s, stroke .12s; }
+  .key-btn:hover{ stroke:var(--copper-soft); }
+  .key-btn.on{ fill:var(--copper); stroke:var(--glow); }
+  .key-num{ fill:var(--muted); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:11px; pointer-events:none; }
+  .key-btn.on ~ .key-num{ fill:#241705; }
+
+  aside{
+    width:250px;
+    flex:none;
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    border-left:1px solid var(--line);
+    padding:16px;
+    overflow-y:auto;
+  }
+  aside h2{
+    font-family:'Rajdhani', sans-serif;
+    font-size:13px;
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0 0 10px;
+    border-bottom:1px dashed var(--line);
+    padding-bottom:8px;
+  }
+  .lamp-row{
+    display:flex; align-items:center; gap:10px;
+    padding:8px 6px; border-radius:6px; font-size:13px;
+    border:1px solid transparent;
+  }
+  .lamp-row .dot{
+    width:12px; height:12px; border-radius:50%;
+    background:var(--off); flex:none;
+    box-shadow:0 0 0 3px rgba(255,255,255,0.02) inset;
+  }
+  .lamp-row .dot.on{ background:var(--glow); box-shadow:0 0 10px var(--glow); }
+  .lamp-row .name{ flex:1; color:var(--ink); }
+  .lamp-row .state{ color:var(--muted); font-size:11px; }
+  .empty-hint{ color:var(--muted); font-size:12px; line-height:1.6; }
+
+  #instructions{
+    position:fixed; inset:0; background:rgba(4,10,18,0.72);
+    display:none; align-items:center; justify-content:center; z-index:50;
+  }
+  #instructions.show{ display:flex; }
+  #instructions .card{
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    max-width:520px; padding:24px 26px; box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  }
+  #instructions h3{
+    font-family:'Rajdhani',sans-serif; font-size:20px; margin:0 0 12px; color:var(--copper-soft);
+    text-transform:uppercase; letter-spacing:.5px;
+  }
+  #instructions ol{ margin:0 0 14px; padding-left:20px; color:var(--ink); font-size:13.5px; line-height:1.75; }
+  #instructions p{ color:var(--muted); font-size:12.5px; line-height:1.6; }
+  #instructions button{
+    margin-top:6px; background:var(--copper); border:none; color:#1a1206;
+    font-family:'Rajdhani',sans-serif; font-weight:700; padding:9px 18px; border-radius:6px;
+    cursor:pointer; font-size:14px; letter-spacing:.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="titleblock">
+    <h1>Электро<span>схема</span></h1>
+    <p>Проходные и перекрёстные выключатели · провода · лампы</p>
+  </div>
+
+  <div class="toolbar">
+    <button class="tool" id="btnAddLamp">+ Лампа</button>
+    <button class="tool" id="btnAddSwitch">+ Проходной выключатель</button>
+    <button class="tool" id="btnAddCross">+ Перекрёстный выключатель</button>
+    <div class="dropdown-wrap">
+      <button class="tool" id="btnAddGang">+ Клавишный выключатель ▾</button>
+      <div class="dropdown-menu" id="gangMenu">
+        <button data-keys="1">1 клавиша</button>
+        <button data-keys="2">2 клавиши</button>
+        <button data-keys="3">3 клавиши</button>
+      </div>
+    </div>
+    <button class="tool ghost" id="btnDemo">Пример цепи</button>
+  </div>
+
+  <div class="spacer"></div>
+  <div class="toolbar">
+    <button class="tool ghost" id="btnHelp">Как пользоваться</button>
+    <button class="tool danger" id="btnClear">Очистить</button>
+  </div>
+</header>
+
+<main>
+  <div id="canvasWrap">
+    <svg id="board" width="1700" height="1000">
+      <g id="wiresLayer"></g>
+      <g id="compsLayer"></g>
+      <line id="tempWire" x1="0" y1="0" x2="0" y2="0"></line>
+    </svg>
+  </div>
+  <aside>
+    <h2>Лампы</h2>
+    <div id="lampList"><div class="empty-hint">Пока нет ни одной лампы. Добавьте её кнопкой «+ Лампа» и подключите проводами к источнику через выключатели.</div></div>
+  </aside>
+</main>
+
+<div id="instructions">
+  <div class="card">
+    <h3>Как собрать цепь</h3>
+    <ol>
+      <li>Кнопками сверху добавляйте лампы и выключатели на схему.</li>
+      <li>Перетаскивайте элементы мышью, чтобы расставить их удобно.</li>
+      <li>Кликните по контакту (кружку) на одном элементе, затем по контакту другого — протянется провод. Повторный клик по тому же контакту отменяет провод.</li>
+      <li>Клик по корпусу проходного/перекрёстного выключателя переключает его в другое положение. У многоклавишного выключателя каждая клавиша переключается отдельным кликом прямо по ней — это независимые выключатели на разные лампы.</li>
+      <li>Наведите курсор на провод или элемент — появится красный ×, чтобы удалить его.</li>
+    </ol>
+    <p>Лампа загорается только тогда, когда от «+» источника до самой лампы и обратно до «−» есть непрерывный путь через провода и включённые контакты выключателей — точно как в настоящей электрике.</p>
+    <button id="closeInstructions">Понятно</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- geometry / component definitions ----------
+  const TYPES = {
+    source: { w:112, h:70, fixed:true, terminals:{ plus:{x:112,y:18}, minus:{x:112,y:52} } },
+    lamp:   { w:56,  h:56, terminals:{ a:{x:28,y:0}, b:{x:28,y:56} } },
+    switch: { w:104, h:64, terminals:{ c:{x:0,y:32}, t1:{x:104,y:10}, t2:{x:104,y:54} } },
+    cross:  { w:104, h:64, terminals:{ a1:{x:0,y:10}, a2:{x:0,y:54}, b1:{x:104,y:10}, b2:{x:104,y:54} } }
+  };
+
+  let compUid = 1, wireUid = 1;
+  let lampCount = 0, switchCount = 0, crossCount = 0, gangCount = 0;
+
+  function makeSource(){
+    return { id:'source', type:'source', x:50, y:400, fixed:true };
+  }
+
+  let components = [ makeSource() ];
+  let wires = [];
+  let pendingWire = null; // {compId, term}
+
+  const board = document.getElementById('board');
+  const canvasWrap = document.getElementById('canvasWrap');
+  const wiresLayer = document.getElementById('wiresLayer');
+  const compsLayer = document.getElementById('compsLayer');
+  const tempWireEl = document.getElementById('tempWire');
+  const lampListEl = document.getElementById('lampList');
+
+  function getComp(id){ return components.find(c=>c.id===id); }
+  function nodeId(compId, term){ return compId + ':' + term; }
+
+  // gang (multi-key) switch has a dynamic geometry depending on key count
+  function gangGeom(keys){
+    const n = keys || 2;
+    const w = 100, topPad = 16, keyGap = 40;
+    const h = topPad*2 + (n-1)*keyGap;
+    const terminals = { com:{x:0, y:h/2} };
+    for(let i=1;i<=n;i++) terminals['k'+i] = { x:w, y: topPad + (i-1)*keyGap };
+    return { w, h, terminals };
+  }
+  function getGeom(comp){
+    if(comp.type === 'gang') return gangGeom(comp.keys);
+    return TYPES[comp.type];
+  }
+  function terminalPos(comp, term){
+    const def = getGeom(comp).terminals[term];
+    return { x: comp.x + def.x, y: comp.y + def.y };
+  }
+
+  // ---------- union-find ----------
+  class UnionFind{
+    constructor(){ this.parent = new Map(); }
+    add(x){ if(!this.parent.has(x)) this.parent.set(x, x); }
+    find(x){
+      this.add(x);
+      let root = x;
+      while(this.parent.get(root) !== root) root = this.parent.get(root);
+      let cur = x;
+      while(this.parent.get(cur) !== root){ const next = this.parent.get(cur); this.parent.set(cur, root); cur = next; }
+      return root;
+    }
+    union(a,b){ const ra=this.find(a), rb=this.find(b); if(ra!==rb) this.parent.set(ra, rb); }
+  }
+
+  function simulate(){
+    const uf = new UnionFind();
+    components.forEach(c=>{
+      Object.keys(getGeom(c).terminals).forEach(term => uf.add(nodeId(c.id, term)));
+    });
+    wires.forEach(w => uf.union(nodeId(w.a.compId, w.a.term), nodeId(w.b.compId, w.b.term)));
+    components.forEach(c=>{
+      if(c.type === 'switch'){
+        const t = (c.state||0) === 0 ? 't1' : 't2';
+        uf.union(nodeId(c.id,'c'), nodeId(c.id,t));
+      } else if(c.type === 'cross'){
+        if((c.state||0) === 0){
+          uf.union(nodeId(c.id,'a1'), nodeId(c.id,'b1'));
+          uf.union(nodeId(c.id,'a2'), nodeId(c.id,'b2'));
+        } else {
+          uf.union(nodeId(c.id,'a1'), nodeId(c.id,'b2'));
+          uf.union(nodeId(c.id,'a2'), nodeId(c.id,'b1'));
+        }
+      } else if(c.type === 'gang'){
+        const n = c.keys || 2;
+        const states = c.state || [];
+        for(let i=1;i<=n;i++){
+          if(states[i-1]) uf.union(nodeId(c.id,'com'), nodeId(c.id,'k'+i));
+        }
+      }
+    });
+    const plusRoot = uf.find(nodeId('source','plus'));
+    const minusRoot = uf.find(nodeId('source','minus'));
+    const lampLit = {};
+    let anyLit = false;
+    components.forEach(c=>{
+      if(c.type === 'lamp'){
+        const a = uf.find(nodeId(c.id,'a')), b = uf.find(nodeId(c.id,'b'));
+        const lit = (a===plusRoot && b===minusRoot) || (a===minusRoot && b===plusRoot);
+        lampLit[c.id] = lit;
+        if(lit) anyLit = true;
+      }
+    });
+    const liveSets = new Set();
+    if(anyLit && plusRoot !== minusRoot){ liveSets.add(plusRoot); liveSets.add(minusRoot); }
+    return {
+      lampLit,
+      live(compId, term){ return liveSets.has(uf.find(nodeId(compId, term))); }
+    };
+  }
+
+  // ---------- rendering ----------
+  function svgPoint(evt){
+    const pt = board.createSVGPoint();
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    return pt.matrixTransform(board.getScreenCTM().inverse());
+  }
+
+  function terminalClass(sim, comp, term){
+    let cls = 'terminal';
+    if(sim.live(comp.id, term)) cls += ' live';
+    if(pendingWire && pendingWire.compId===comp.id && pendingWire.term===term) cls += ' pending';
+    return cls;
+  }
+
+  function sourceSVG(c, sim){
+    return `
+      <rect class="src-plate" x="0" y="0" width="${TYPES.source.w}" height="${TYPES.source.h}" rx="8"/>
+      <text class="label" x="${TYPES.source.w/2}" y="-8" text-anchor="middle">Источник питания</text>
+      <text class="src-sign" x="14" y="27" text-anchor="middle">+</text>
+      <text class="src-sign" x="14" y="61" text-anchor="middle">−</text>
+      <line class="conn ${sim.live('source','plus')?'live':''}" x1="20" y1="18" x2="${TYPES.source.w}" y2="18"/>
+      <line class="conn ${sim.live('source','minus')?'live':''}" x1="20" y1="52" x2="${TYPES.source.w}" y2="52"/>
+      <text class="term-label" x="${TYPES.source.w-10}" y="12" text-anchor="end">L</text>
+      <text class="term-label" x="${TYPES.source.w-10}" y="46" text-anchor="end">N</text>
+      <circle class="${terminalClass(sim,c,'plus')}" data-comp="${c.id}" data-term="plus" cx="${TYPES.source.w}" cy="18" r="6.5"/>
+      <circle class="${terminalClass(sim,c,'minus')}" data-comp="${c.id}" data-term="minus" cx="${TYPES.source.w}" cy="52" r="6.5"/>
+    `;
+  }
+
+  function lampSVG(c, sim){
+    const lit = !!sim.lampLit[c.id];
+    return `
+      <circle class="lamp-body ${lit?'lit':''}" cx="28" cy="28" r="24"/>
+      <line class="lamp-x" x1="12" y1="12" x2="44" y2="44"/>
+      <line class="lamp-x" x1="44" y1="12" x2="12" y2="44"/>
+      <text class="label" x="28" y="-8" text-anchor="middle">${c.name}</text>
+      <text class="term-label" x="38" y="-2" text-anchor="start">L</text>
+      <text class="term-label" x="38" y="68" text-anchor="start">N</text>
+      <circle class="${terminalClass(sim,c,'a')}" data-comp="${c.id}" data-term="a" cx="28" cy="0" r="6.5"/>
+      <circle class="${terminalClass(sim,c,'b')}" data-comp="${c.id}" data-term="b" cx="28" cy="56" r="6.5"/>
+    `;
+  }
+
+  function switchSVG(c, sim){
+    const t = TYPES.switch;
+    const state = c.state||0;
+    const active = state===0 ? {x:t.w,y:10,term:'t1'} : {x:t.w,y:54,term:'t1'};
+    const activeTerm = state===0 ? 't1' : 't2';
+    const inactiveTerm = state===0 ? 't2' : 't1';
+    const activePt = state===0 ? {x:t.w,y:10} : {x:t.w,y:54};
+    const inactivePt = state===0 ? {x:t.w,y:54} : {x:t.w,y:10};
+    const activeLive = sim.live(c.id,'c');
+    return `
+      <rect class="body" x="0" y="0" width="${t.w}" height="${t.h}" rx="8"/>
+      <text class="label" x="${t.w/2}" y="-8" text-anchor="middle">${c.name}</text>
+      <text class="sublabel" x="${t.w/2}" y="${t.h+13}" text-anchor="middle">клик — переключить</text>
+      <line class="conn-inactive" x1="0" y1="32" x2="${inactivePt.x}" y2="${inactivePt.y}"/>
+      <line class="conn ${activeLive?'live':''}" x1="0" y1="32" x2="${activePt.x}" y2="${activePt.y}"/>
+      <text class="term-label" x="10" y="26" text-anchor="start">COM</text>
+      <text class="term-label" x="${t.w-10}" y="4" text-anchor="end">L1</text>
+      <text class="term-label" x="${t.w-10}" y="48" text-anchor="end">L2</text>
+      <circle class="${terminalClass(sim,c,'c')}" data-comp="${c.id}" data-term="c" cx="0" cy="32" r="6.5"/>
+      <circle class="${terminalClass(sim,c,'t1')}" data-comp="${c.id}" data-term="t1" cx="${t.w}" cy="10" r="6.5"/>
+      <circle class="${terminalClass(sim,c,'t2')}" data-comp="${c.id}" data-term="t2" cx="${t.w}" cy="54" r="6.5"/>
+    `;
+  }
+
+  function crossSVG(c, sim){
+    const t = TYPES.cross;
+    const state = c.state||0;
+    let e1a,e1b,e2a,e2b;
+    if(state===0){ e1a='a1'; e1b='b1'; e2a='a2'; e2b='b2'; }
+    else { e1a='a1'; e1b='b2'; e2a='a2'; e2b='b1'; }
+    const p = TYPES.cross.terminals;
+    const live1 = sim.live(c.id, e1a);
+    const live2 = sim.live(c.id, e2a);
+    return `
+      <rect class="body" x="0" y="0" width="${t.w}" height="${t.h}" rx="8"/>
+      <text class="label" x="${t.w/2}" y="-8" text-anchor="middle">${c.name}</text>
+      <text class="sublabel" x="${t.w/2}" y="${t.h+13}" text-anchor="middle">клик — переключить</text>
+      <line class="conn ${live1?'live':''}" x1="${p[e1a].x}" y1="${p[e1a].y}" x2="${p[e1b].x}" y2="${p[e1b].y}"/>
+      <line class="conn ${live2?'live':''}" x1="${p[e2a].x}" y1="${p[e2a].y}" x2="${p[e2b].x}" y2="${p[e2b].y}"/>
+      <text class="term-label" x="10" y="4" text-anchor="start">L1</text>
+      <text class="term-label" x="10" y="48" text-anchor="start">L2</text>
+      <text class="term-label" x="${t.w-10}" y="4" text-anchor="end">L1'</text>
+      <text class="term-label" x="${t.w-10}" y="48" text-anchor="end">L2'</text>
+      <circle class="${terminalClass(sim,c,'a1')}" data-comp="${c.id}" data-term="a1" cx="${p.a1.x}" cy="${p.a1.y}" r="6.5"/>
+      <circle class="${terminalClass(sim,c,'a2')}" data-comp="${c.id}" data-term="a2" cx="${p.a2.x}" cy="${p.a2.y}" r="6.5"/>
+      <circle class="${terminalClass(sim,c,'b1')}" data-comp="${c.id}" data-term="b1" cx="${p.b1.x}" cy="${p.b1.y}" r="6.5"/>
+      <circle class="${terminalClass(sim,c,'b2')}" data-comp="${c.id}" data-term="b2" cx="${p.b2.x}" cy="${p.b2.y}" r="6.5"/>
+    `;
+  }
+
+  function gangSVG(c, sim){
+    const g = getGeom(c);
+    const n = c.keys || 2;
+    const states = c.state || [];
+    let parts = `
+      <rect class="body" x="0" y="0" width="${g.w}" height="${g.h}" rx="8"/>
+      <text class="label" x="${g.w/2}" y="-8" text-anchor="middle">${c.name}</text>
+      <text class="sublabel" x="${g.w/2}" y="${g.h+13}" text-anchor="middle">клик по клавише — переключить</text>
+      <text class="term-label" x="10" y="${g.h/2 - 8}" text-anchor="start">L</text>
+      <circle class="${terminalClass(sim,c,'com')}" data-comp="${c.id}" data-term="com" cx="0" cy="${g.h/2}" r="6.5"/>
+    `;
+    for(let i=1;i<=n;i++){
+      const term = 'k'+i;
+      const p = g.terminals[term];
+      const on = !!states[i-1];
+      const live = on && sim.live(c.id, term);
+      const midx = g.w*0.46, midy = g.h/2 + (p.y - g.h/2)*0.46;
+      parts += `
+        <line class="conn ${live?'live':''} ${!on?'conn-inactive':''}" x1="0" y1="${g.h/2}" x2="${p.x}" y2="${p.y}"/>
+        <g class="gang-key" data-comp="${c.id}" data-key="${i}" transform="translate(${midx},${midy})">
+          <rect class="key-btn ${on?'on':''}" x="-14" y="-11" width="28" height="22" rx="4"/>
+          <text class="key-num" x="0" y="4" text-anchor="middle">${i}</text>
+        </g>
+        <text class="term-label" x="${p.x-10}" y="${p.y-8}" text-anchor="end">${i}</text>
+        <circle class="${terminalClass(sim,c,term)}" data-comp="${c.id}" data-term="${term}" cx="${p.x}" cy="${p.y}" r="6.5"/>
+      `;
+    }
+    return parts;
+  }
+
+  function compHTML(c, sim){
+    const t = getGeom(c);
+    let inner = '';
+    if(c.type==='source') inner = sourceSVG(c, sim);
+    else if(c.type==='lamp') inner = lampSVG(c, sim);
+    else if(c.type==='switch') inner = switchSVG(c, sim);
+    else if(c.type==='cross') inner = crossSVG(c, sim);
+    else if(c.type==='gang') inner = gangSVG(c, sim);
+    const hoverZone = c.fixed ? '' : `<rect class="hover-zone" x="-16" y="-34" width="${t.w+36}" height="${t.h+52}"/>`;
+    const delBtn = c.fixed ? '' : `
+      <g class="del-btn" data-comp="${c.id}" transform="translate(${t.w+4},-16)">
+        <circle r="9"/><text x="0" y="4" text-anchor="middle">×</text>
+      </g>`;
+    return `<g class="comp-group" data-comp="${c.id}" transform="translate(${c.x},${c.y})">${hoverZone}${inner}${delBtn}</g>`;
+  }
+
+  function wireHTML(w, sim){
+    const compA = getComp(w.a.compId), compB = getComp(w.b.compId);
+    if(!compA || !compB) return '';
+    const p1 = terminalPos(compA, w.a.term), p2 = terminalPos(compB, w.b.term);
+    const isLive = sim.live(w.a.compId, w.a.term);
+    const mx = (p1.x+p2.x)/2, my = (p1.y+p2.y)/2;
+    return `
+      <g class="wire-group">
+        <line class="wire-hit" data-wire="${w.id}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/>
+        <line class="wire ${isLive?'live':''}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}"/>
+        <g class="wire-del" data-wire="${w.id}" transform="translate(${mx},${my})">
+          <circle r="9"/><text x="0" y="4" text-anchor="middle">×</text>
+        </g>
+      </g>`;
+  }
+
+  function fitCanvasSize(){
+    let maxX = 0, maxY = 0;
+    components.forEach(c=>{
+      const g = getGeom(c);
+      maxX = Math.max(maxX, c.x + g.w + 80);
+      maxY = Math.max(maxY, c.y + g.h + 80);
+    });
+    const wrapW = canvasWrap.clientWidth || 0;
+    const wrapH = canvasWrap.clientHeight || 0;
+    const w = Math.max(1700, maxX, wrapW);
+    const h = Math.max(1000, maxY, wrapH);
+    board.setAttribute('width', w);
+    board.setAttribute('height', h);
+  }
+
+  function render(){
+    const sim = simulate();
+    fitCanvasSize();
+    wiresLayer.innerHTML = wires.map(w => wireHTML(w, sim)).join('');
+    compsLayer.innerHTML = components.map(c => compHTML(c, sim)).join('');
+    renderLampList(sim);
+    updateTempWire();
+  }
+
+  function renderLampList(sim){
+    const lamps = components.filter(c=>c.type==='lamp');
+    if(lamps.length===0){
+      lampListEl.innerHTML = '<div class="empty-hint">Пока нет ни одной лампы. Добавьте её кнопкой «+ Лампа» и подключите проводами к источнику через выключатели.</div>';
+      return;
+    }
+    lampListEl.innerHTML = lamps.map(l=>{
+      const on = !!sim.lampLit[l.id];
+      return `<div class="lamp-row">
+        <div class="dot ${on?'on':''}"></div>
+        <div class="name">${l.name}</div>
+        <div class="state">${on?'горит':'не горит'}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function updateTempWire(){
+    if(!pendingWire){ tempWireEl.style.display = 'none'; return; }
+    const comp = getComp(pendingWire.compId);
+    if(!comp){ pendingWire = null; tempWireEl.style.display='none'; return; }
+    const p = terminalPos(comp, pendingWire.term);
+    tempWireEl.setAttribute('x1', p.x);
+    tempWireEl.setAttribute('y1', p.y);
+    tempWireEl.setAttribute('x2', p.x);
+    tempWireEl.setAttribute('y2', p.y);
+    tempWireEl.style.display = 'block';
+  }
+
+  // ---------- mutation helpers ----------
+  function addLamp(){
+    lampCount++;
+    components.push({ id:'c'+(compUid++), type:'lamp', x: 900 + (lampCount%3)*100, y: 120 + Math.floor(lampCount/3)*110, name:'Лампа '+lampCount });
+    render();
+  }
+  function addSwitch(){
+    switchCount++;
+    components.push({ id:'c'+(compUid++), type:'switch', state:0, x: 260 + (switchCount%3)*140, y: 500 + Math.floor(switchCount/3)*110, name:'Выключатель '+switchCount });
+    render();
+  }
+  function addCross(){
+    crossCount++;
+    components.push({ id:'c'+(compUid++), type:'cross', state:0, x: 260 + (crossCount%3)*140, y: 700 + Math.floor(crossCount/3)*110, name:'Перекрёстный '+crossCount });
+    render();
+  }
+  function addGang(n){
+    gangCount++;
+    const label = n===1 ? 'Выкл. 1-кл. ' : (n===2 ? 'Выкл. 2-кл. ' : 'Выкл. 3-кл. ');
+    components.push({ id:'c'+(compUid++), type:'gang', keys:n, state:new Array(n).fill(0), x: 260 + (gangCount%3)*150, y: 860 + Math.floor(gangCount/3)*140, name:label+gangCount });
+    render();
+  }
+  function toggleGangKey(compId, key){
+    const comp = getComp(compId);
+    if(!comp || comp.type!=='gang') return;
+    if(!comp.state) comp.state = new Array(comp.keys||2).fill(0);
+    comp.state[key-1] = comp.state[key-1] ? 0 : 1;
+    render();
+  }
+  function deleteComponent(id){
+    if(id==='source') return;
+    components = components.filter(c=>c.id!==id);
+    wires = wires.filter(w=> w.a.compId!==id && w.b.compId!==id);
+    if(pendingWire && pendingWire.compId===id) pendingWire = null;
+    render();
+  }
+  function deleteWire(id){
+    wires = wires.filter(w=>w.id!==id);
+    render();
+  }
+  function clearAll(){
+    components = [ makeSource() ];
+    wires = [];
+    pendingWire = null;
+    lampCount = 0; switchCount = 0; crossCount = 0; gangCount = 0;
+    render();
+  }
+  function loadDemo(){
+    clearAll();
+    components[0].x = 60; components[0].y = 380;
+    lampCount = 1; switchCount = 2; crossCount = 1;
+    const sw1 = { id:'c'+(compUid++), type:'switch', state:0, x:240, y:350, name:'Выключатель 1' };
+    const cr  = { id:'c'+(compUid++), type:'cross',  state:0, x:440, y:350, name:'Перекрёстный 1' };
+    const sw2 = { id:'c'+(compUid++), type:'switch', state:0, x:640, y:350, name:'Выключатель 2' };
+    const lamp = { id:'c'+(compUid++), type:'lamp', x:860, y:342, name:'Лампа 1' };
+    components.push(sw1, cr, sw2, lamp);
+    wires.push(
+      { id:'w'+(wireUid++), a:{compId:'source', term:'plus'}, b:{compId:sw1.id, term:'c'} },
+      { id:'w'+(wireUid++), a:{compId:sw1.id, term:'t1'}, b:{compId:cr.id, term:'a1'} },
+      { id:'w'+(wireUid++), a:{compId:sw1.id, term:'t2'}, b:{compId:cr.id, term:'a2'} },
+      { id:'w'+(wireUid++), a:{compId:cr.id, term:'b1'}, b:{compId:sw2.id, term:'t1'} },
+      { id:'w'+(wireUid++), a:{compId:cr.id, term:'b2'}, b:{compId:sw2.id, term:'t2'} },
+      { id:'w'+(wireUid++), a:{compId:sw2.id, term:'c'}, b:{compId:lamp.id, term:'a'} },
+      { id:'w'+(wireUid++), a:{compId:lamp.id, term:'b'}, b:{compId:'source', term:'minus'} }
+    );
+    render();
+  }
+
+  // ---------- interaction ----------
+  function onTerminalClick(compId, term){
+    if(!pendingWire){
+      pendingWire = { compId, term };
+      render();
+      return;
+    }
+    if(pendingWire.compId===compId && pendingWire.term===term){
+      pendingWire = null;
+      render();
+      return;
+    }
+    const dup = wires.some(w =>
+      (w.a.compId===compId && w.a.term===term && w.b.compId===pendingWire.compId && w.b.term===pendingWire.term) ||
+      (w.b.compId===compId && w.b.term===term && w.a.compId===pendingWire.compId && w.a.term===pendingWire.term)
+    );
+    if(!dup){
+      wires.push({ id:'w'+(wireUid++), a: pendingWire, b: { compId, term } });
+    }
+    pendingWire = null;
+    render();
+  }
+
+  function startDrag(evt, compId){
+    const comp = getComp(compId);
+    if(!comp || comp.fixed) return;
+    const startPt = svgPoint(evt);
+    const startX = comp.x, startY = comp.y;
+    let moved = false;
+
+    function onMove(e){
+      const p = svgPoint(e);
+      const dx = p.x - startPt.x, dy = p.y - startPt.y;
+      if(Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      if(moved){
+        comp.x = Math.max(0, startX + dx);
+        comp.y = Math.max(0, startY + dy);
+        render();
+      }
+    }
+    function onUp(){
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if(!moved && (comp.type==='switch' || comp.type==='cross')){
+        comp.state = comp.state ? 0 : 1;
+        render();
+      }
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  board.addEventListener('mousedown', function(e){
+    const delBtn = e.target.closest('.del-btn');
+    if(delBtn){ e.stopPropagation(); deleteComponent(delBtn.dataset.comp); return; }
+
+    const wireDel = e.target.closest('.wire-del');
+    if(wireDel){ e.stopPropagation(); deleteWire(wireDel.dataset.wire); return; }
+
+    const term = e.target.closest('.terminal');
+    if(term){ e.stopPropagation(); onTerminalClick(term.dataset.comp, term.dataset.term); return; }
+
+    const gangKey = e.target.closest('.gang-key');
+    if(gangKey){ e.stopPropagation(); toggleGangKey(gangKey.dataset.comp, parseInt(gangKey.dataset.key, 10)); return; }
+
+    const compGroup = e.target.closest('.comp-group');
+    if(compGroup){ startDrag(e, compGroup.dataset.comp); return; }
+
+    if(pendingWire){ pendingWire = null; updateTempWire(); }
+  });
+
+  board.addEventListener('mousemove', function(e){
+    if(pendingWire){
+      const p = svgPoint(e);
+      tempWireEl.setAttribute('x2', p.x);
+      tempWireEl.setAttribute('y2', p.y);
+    }
+  });
+
+  window.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && pendingWire){
+      pendingWire = null;
+      updateTempWire();
+    }
+  });
+
+  document.getElementById('btnAddLamp').addEventListener('click', addLamp);
+  document.getElementById('btnAddSwitch').addEventListener('click', addSwitch);
+  document.getElementById('btnAddCross').addEventListener('click', addCross);
+
+  const gangMenu = document.getElementById('gangMenu');
+  document.getElementById('btnAddGang').addEventListener('click', function(e){
+    e.stopPropagation();
+    gangMenu.classList.toggle('show');
+  });
+  gangMenu.addEventListener('click', function(e){
+    const btn = e.target.closest('button[data-keys]');
+    if(!btn) return;
+    addGang(parseInt(btn.dataset.keys, 10));
+    gangMenu.classList.remove('show');
+  });
+  document.addEventListener('click', function(){ gangMenu.classList.remove('show'); });
+  document.getElementById('btnClear').addEventListener('click', function(){
+    if(components.length>1 || wires.length>0){
+      if(confirm('Удалить всю схему?')) clearAll();
+    }
+  });
+  document.getElementById('btnDemo').addEventListener('click', loadDemo);
+
+  const instrEl = document.getElementById('instructions');
+  document.getElementById('btnHelp').addEventListener('click', ()=> instrEl.classList.add('show'));
+  document.getElementById('closeInstructions').addEventListener('click', ()=> instrEl.classList.remove('show'));
+  instrEl.addEventListener('mousedown', function(e){ if(e.target===instrEl) instrEl.classList.remove('show'); });
+
+  window.addEventListener('resize', fitCanvasSize);
+
+  render();
+  instrEl.classList.add('show');
+})();
+</script>
+</body>
+</html>
